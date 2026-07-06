@@ -132,7 +132,7 @@ function ld(o: Partial<L>): L {
     dateCreated: "2026-06-01", customerName: "", phone: "", email: "", rawSource: "", possibleSource: "",
     confirmedSource: "", sourceReviewStatus: "Reviewed", serviceInterest: "Mobile Detail", claimStatus: "Assigned",
     assignedSalesRep: "Haley Brasil Soares", status: "New Lead", nextFollowUp: "", quoteAmount: 0, bookedDate: "",
-    bookedJobValue: 0, notes: "", customerId: "", maintenanceId: "", ...o };
+    bookedJobValue: 0, notes: "", customerId: "", maintenanceId: "", origin: "manual", ...o };
 }
 function jb(o: Partial<J>): J {
   const b: J = { id: "", leadId: "", urableJobId: "", urableJobLink: "", ghlContactLink: "", dateCompleted: "2026-06-05",

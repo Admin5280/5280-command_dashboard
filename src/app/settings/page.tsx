@@ -1,10 +1,72 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { BASE_PAY_TYPES, BasePayType, PayRules, TechBasePayRule } from "@/lib/types";
-import { today } from "@/lib/format";
-import { Button, Card, Field, Input, PageHeader, Section, Select } from "@/components/ui";
+import { prettyDate, today } from "@/lib/format";
+import { Button, Card, Field, Input, PageHeader, Section, Select, StatusPill } from "@/components/ui";
+
+const WEBHOOK_URL = "https://5280-command-dashboard.vercel.app/api/webhooks/ghl/lead-created";
+interface WebhookEventLite { status: string; lead_id: string | null; duplicate: boolean; message: string; created_at: string; }
+
+function CloudPanel() {
+  const s = useStore();
+  const [events, setEvents] = useState<WebhookEventLite[]>([]);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => fetch("/api/webhooks/status").then((r) => r.json())
+    .then((j) => { setConfigured(!!j.configured); setEvents(j.events || []); }).catch(() => setConfigured(false));
+  useEffect(() => { refresh(); }, []);
+
+  async function migrate() {
+    setBusy(true); setMsg("Migrating leads to Supabase…");
+    const r = await s.migrateLeadsToCloud();
+    setMsg(r.ok ? `✓ Migrated ${r.count} lead(s) to Supabase.` : `✕ ${r.error}`);
+    setBusy(false);
+  }
+
+  const last = events[0];
+  const lastCreated = events.find((e) => e.status === "created");
+  const lastDup = events.find((e) => e.duplicate);
+  const lastErr = events.find((e) => e.status === "error" || e.status === "unauthorized");
+  const fmt = (e?: WebhookEventLite) => e ? `${prettyDate(e.created_at.slice(0, 10))} · ${e.status}${e.lead_id ? ` · ${e.lead_id}` : ""}${e.message ? ` · ${e.message}` : ""}` : "—";
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-ink">GHL Webhook & Cloud Leads</h3>
+        <StatusPill label={configured === null ? "checking…" : configured ? "Supabase connected" : "Supabase not configured"} tone={configured ? "good" : configured === null ? "neutral" : "warn"} />
+      </div>
+
+      <div className="text-xs text-muted mb-3">
+        Leads storage: <b className={s.leadsRemote ? "text-good" : "text-gold"}>{s.leadsRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b>.
+        {!s.leadsRemote && " Add the Supabase env vars in Vercel, then reload."}
+      </div>
+
+      <div className="bg-base border border-line rounded-lg p-3 mb-3">
+        <div className="text-xs uppercase tracking-wide text-muted mb-1">Webhook endpoint (POST)</div>
+        <code className="text-xs text-accent break-all">{WEBHOOK_URL}</code>
+        <div className="text-xs text-muted mt-2">Header required: <code className="text-ink">x-5280-webhook-secret</code> = your <code className="text-ink">GHL_WEBHOOK_SECRET</code></div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+        <div className="bg-base border border-line rounded-lg p-2"><div className="text-[10px] uppercase text-muted">Last webhook received</div><div className="text-xs text-ink">{fmt(last)}</div></div>
+        <div className="bg-base border border-line rounded-lg p-2"><div className="text-[10px] uppercase text-muted">Last webhook status</div><div className="text-xs text-ink">{last?.status ?? "—"}</div></div>
+        <div className="bg-base border border-line rounded-lg p-2"><div className="text-[10px] uppercase text-muted">Last lead created</div><div className="text-xs text-ink">{fmt(lastCreated)}</div></div>
+        <div className="bg-base border border-line rounded-lg p-2"><div className="text-[10px] uppercase text-muted">Last duplicate detected</div><div className="text-xs text-ink">{fmt(lastDup)}</div></div>
+        <div className="bg-base border border-line rounded-lg p-2 sm:col-span-2"><div className="text-[10px] uppercase text-muted">Last webhook error</div><div className={`text-xs ${lastErr ? "text-danger" : "text-ink"}`}>{fmt(lastErr)}</div></div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={refresh}>Refresh</Button>
+        <Button variant="accent" onClick={() => { if (!busy) migrate(); }}>{busy ? "Migrating…" : "Migrate current leads → Supabase"}</Button>
+        {msg && <span className="text-sm text-muted">{msg}</span>}
+      </div>
+    </Card>
+  );
+}
 
 type Kind = "sources" | "services" | "salesReps" | "technicians";
 
@@ -184,6 +246,8 @@ export default function SettingsPage() {
         <EditableList title="Sales Reps" kind="salesReps" />
         <EditableList title="Technicians" kind="technicians" />
       </div>
+
+      <Section title="GHL Webhook & Cloud Leads"><CloudPanel /></Section>
 
       <Section title="Pay Rules"><PayRulesEditor /></Section>
 

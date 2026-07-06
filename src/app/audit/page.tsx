@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
-import { Job } from "@/lib/types";
+import { Job, Lead } from "@/lib/types";
 import { leadFlags, bookedNotInJobs, completedJobsMissingCareLead, dupCareLeadsBy, soldCareLeadsWithoutMember } from "@/lib/guardrails";
 import { careAudit } from "@/lib/careClub";
 import { serviceQuality } from "@/lib/quality";
@@ -113,6 +113,37 @@ export default function AuditPage() {
     ];
   }, [s.jobs, s.from, s.to]);
 
+  const [failedWebhooks, setFailedWebhooks] = useState(0);
+  useEffect(() => {
+    fetch("/api/webhooks/status").then((r) => r.json())
+      .then((j) => setFailedWebhooks((j.events || []).filter((e: { status: string }) => e.status === "error" || e.status === "unauthorized").length))
+      .catch(() => {});
+  }, []);
+
+  const ghlChecks = useMemo<Row[]>(() => {
+    const ghl = s.leads.filter((l) => l.origin === "ghl");
+    const dupBy = (field: keyof Lead) => {
+      const counts: Record<string, number> = {};
+      s.leads.forEach((l) => { const v = String(l[field] || ""); if (v) counts[v] = (counts[v] || 0) + 1; });
+      return s.leads.filter((l) => { const v = String(l[field] || ""); return v && counts[v] > 1; });
+    };
+    const noContactId = ghl.filter((l) => !l.ghlContactId);
+    const noContact = ghl.filter((l) => !l.phone && !l.email);
+    const needsReview = ghl.filter((l) => !l.confirmedSource);
+    const dupContact = dupBy("ghlContactId");
+    const dupPhone = dupBy("phone");
+    const dupEmail = dupBy("email");
+    return [
+      { name: "GHL leads missing GHL Contact ID", count: noContactId.length, sample: noContactId.slice(0, 6).map((l) => l.leadId).join(", "), href: "/leads" },
+      { name: "Webhook leads missing phone AND email", count: noContact.length, sample: noContact.slice(0, 6).map((l) => l.leadId).join(", "), href: "/leads" },
+      { name: "GHL leads needing source review", count: needsReview.length, sample: needsReview.slice(0, 6).map((l) => l.leadId).join(", "), href: "/leads" },
+      { name: "Duplicate leads by GHL Contact ID", count: dupContact.length, sample: [...new Set(dupContact.map((l) => l.ghlContactId))].slice(0, 6).join(", "), href: "/leads" },
+      { name: "Duplicate leads by phone", count: dupPhone.length, sample: [...new Set(dupPhone.map((l) => l.phone))].slice(0, 6).join(", "), href: "/leads" },
+      { name: "Duplicate leads by email", count: dupEmail.length, sample: [...new Set(dupEmail.map((l) => l.email))].slice(0, 6).join(", "), href: "/leads" },
+      { name: "Webhook failed records (recent)", count: failedWebhooks, sample: failedWebhooks ? "see Settings → GHL Webhook panel" : "", href: "/settings" },
+    ];
+  }, [s.leads, failedWebhooks]);
+
   const bookedGap = useMemo(() => bookedNotInJobs(s.leads, s.jobs), [s.leads, s.jobs]);
   const careChecks = useMemo(() => careAudit(s.careMembers, s.careVisits, s.jobs), [s.careMembers, s.careVisits, s.jobs]);
 
@@ -126,7 +157,7 @@ export default function AuditPage() {
     (j.paymentStatus === "Fully Paid" && j.amountDue > 0) ||
     (j.paymentStatus === "Unpaid" && j.amountPaid > 0));
 
-  const allRows = [...leadChecks, ...jobChecks, ...claimChecks, ...qualityChecks, ...marketingChecks, ...careLeadChecks];
+  const allRows = [...leadChecks, ...ghlChecks, ...jobChecks, ...claimChecks, ...qualityChecks, ...marketingChecks, ...careLeadChecks];
   const openIssues = sum(allRows, (r) => r.count) + bookedGap.length + sum(careChecks, (c) => c.count) + payMismatch.length + (revMismatch !== 0 ? 1 : 0);
 
   const CheckTable = ({ rows }: { rows: Row[] }) => (
@@ -172,6 +203,7 @@ export default function AuditPage() {
       </div>
 
       <Section title="Lead Guardrails"><CheckTable rows={leadChecks} /></Section>
+      <Section title="GHL / Webhook Intake Checks"><CheckTable rows={ghlChecks} /></Section>
       <Section title="Sales & Claim Checks"><CheckTable rows={claimChecks} /></Section>
       <Section title="Job Health & Payroll Readiness"><CheckTable rows={jobChecks} /></Section>
       <Section title="Quality & Reputation Checks"><CheckTable rows={qualityChecks} /></Section>

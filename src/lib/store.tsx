@@ -20,6 +20,9 @@ interface Store extends AppData {
   // "current user" sales rep (shared by Sales dashboard + Leads "Assigned To Me")
   currentRep: string;
   setCurrentRep: (rep: string) => void;
+  // leads are served from Supabase when the server is configured
+  leadsRemote: boolean;
+  migrateLeadsToCloud: () => Promise<{ ok: boolean; count?: number; error?: string }>;
 
   addLead: (l: Omit<Lead, "id">) => void;
   updateLead: (l: Lead) => void;
@@ -125,6 +128,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [currentRep, setCurrentRepState] = useState("");
+  const [leadsRemote, setLeadsRemote] = useState(false);
 
   // hydrate from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
@@ -132,6 +136,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     try { setCurrentRepState(localStorage.getItem("5280-current-rep") ?? ""); } catch { /* ignore */ }
     setReady(true);
   }, []);
+
+  // if the server has Supabase configured, leads live there — load them and switch to remote mode
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    fetch("/api/leads").then((r) => r.json()).then((j) => {
+      if (!cancelled && j && j.configured && Array.isArray(j.leads)) {
+        setData((d) => ({ ...d, leads: j.leads }));
+        setLeadsRemote(true);
+      }
+    }).catch(() => { /* stay on localStorage */ });
+    return () => { cancelled = true; };
+  }, [ready]);
 
   // persist on change (only once ready so we don't clobber storage with defaults)
   useEffect(() => {
@@ -150,6 +167,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const del = <K extends Coll>(k: K, id: string) =>
       setData((d) => ({ ...d, [k]: (d[k] as { id: string }[]).filter((r) => r.id !== id) as AppData[K] }));
 
+    const pushLeadRemote = (l: Lead) =>
+      fetch(`/api/leads/${l.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(l) }).catch(() => {});
+
     return {
       ...data,
       ready,
@@ -158,19 +178,38 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       inRange,
       currentRep,
       setCurrentRep: (rep) => { setCurrentRepState(rep); try { localStorage.setItem("5280-current-rep", rep); } catch { /* ignore */ } },
+      leadsRemote,
+      migrateLeadsToCloud: async () => {
+        try {
+          const res = await fetch("/api/leads/migrate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ leads: data.leads }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const refreshed = await fetch("/api/leads").then((r) => r.json());
+          if (refreshed?.configured && Array.isArray(refreshed.leads)) { setData((d) => ({ ...d, leads: refreshed.leads })); setLeadsRemote(true); }
+          return { ok: true, count: j.count };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
 
-      addLead: (l) => addTo("leads", { ...l, id: uid() }),
-      updateLead: (l) => upd("leads", l),
-      deleteLead: (id) => del("leads", id),
+      addLead: (l) => {
+        if (leadsRemote) {
+          const temp = { ...l, id: uid() } as Lead;
+          setData((d) => ({ ...d, leads: [temp, ...d.leads] }));
+          fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(l) })
+            .then((r) => r.json()).then(({ lead }) => { if (lead) setData((d) => ({ ...d, leads: d.leads.map((x) => (x.id === temp.id ? lead : x)) })); }).catch(() => {});
+        } else addTo("leads", { ...l, id: uid() });
+      },
+      updateLead: (l) => { upd("leads", l); if (leadsRemote) pushLeadRemote(l); },
+      deleteLead: (id) => { del("leads", id); if (leadsRemote) fetch(`/api/leads/${id}`, { method: "DELETE" }).catch(() => {}); },
 
-      addJob: (j) => setData((d) => {
+      addJob: (j) => {
         const job = { ...j, id: uid() };
-        return { ...d, jobs: [job, ...d.jobs], ...completeJobEffects(d, job) };
-      }),
-      updateJob: (j) => setData((d) => {
-        const jobs = d.jobs.map((r) => (r.id === j.id ? j : r));
-        return { ...d, jobs, ...completeJobEffects({ ...d, jobs }, j) };
-      }),
+        if (leadsRemote) { const eff = completeJobEffects(data, job); (eff.leads ?? []).forEach((nl) => { const b = data.leads.find((x) => x.id === nl.id); if (b && b.status !== nl.status) pushLeadRemote(nl); }); }
+        setData((d) => ({ ...d, jobs: [job, ...d.jobs], ...completeJobEffects(d, job) }));
+      },
+      updateJob: (j) => {
+        if (leadsRemote) { const eff = completeJobEffects({ ...data, jobs: data.jobs.map((r) => (r.id === j.id ? j : r)) }, j); (eff.leads ?? []).forEach((nl) => { const b = data.leads.find((x) => x.id === nl.id); if (b && b.status !== nl.status) pushLeadRemote(nl); }); }
+        setData((d) => { const jobs = d.jobs.map((r) => (r.id === j.id ? j : r)); return { ...d, jobs, ...completeJobEffects({ ...d, jobs }, j) }; });
+      },
       deleteJob: (id) => del("jobs", id),
 
       addMarketing: (m) => addTo("marketing", { ...m, id: uid() }),
@@ -234,7 +273,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       resetSample: () => setData(sampleData()),
       clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
     };
-  }, [data, ready, from, to, currentRep]);
+  }, [data, ready, from, to, currentRep, leadsRemote]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

@@ -8,13 +8,13 @@ import { leadFlags } from "@/lib/guardrails";
 import { memberFromLead } from "@/lib/careClub";
 import { money, prettyDate, today } from "@/lib/format";
 import { toCSV, download } from "@/lib/csv";
-import { Badge, Button, Card, ClaimPill, Field, Input, LinkOut, Modal, PageHeader, Section, Select, Table, Textarea, WarnPill, Col } from "@/components/ui";
+import { Badge, Button, Card, ClaimPill, Field, Input, LinkOut, Modal, PageHeader, Section, Select, StatusPill, Table, Textarea, WarnPill, Col } from "@/components/ui";
 
 const blank = (leadId: string): Omit<Lead, "id"> => ({
   leadId, ghlContactId: "", ghlContactLink: "", dateCreated: today(), customerName: "", phone: "", email: "",
   rawSource: "", possibleSource: "", confirmedSource: "", sourceReviewStatus: "Needs Review", serviceInterest: "Mobile Detail",
   claimStatus: "Unclaimed", assignedSalesRep: "", status: "New Lead", nextFollowUp: "", quoteAmount: 0,
-  bookedDate: "", bookedJobValue: 0, notes: "", customerId: "", maintenanceId: "",
+  bookedDate: "", bookedJobValue: 0, notes: "", customerId: "", maintenanceId: "", origin: "manual",
 });
 
 export default function LeadsPage() {
@@ -53,6 +53,8 @@ export default function LeadsPage() {
       case "Booked": return l.status === "Booked" || l.status === "Care Club Sold";
       case "Needs Follow-Up": return l.status === "Follow-Up Needed" || l.status === "No Response" || (!!l.nextFollowUp && l.nextFollowUp <= t && openStatus(l.status));
       case "Needs Source Review": return !l.confirmedSource;
+      case "Imported from GHL": return l.origin === "ghl";
+      case "Manual Entry": return l.origin !== "ghl";
       default: return true;
     }
   };
@@ -84,7 +86,12 @@ export default function LeadsPage() {
   const set = (k: keyof Omit<Lead, "id">, v: string | number) => setForm((f) => ({ ...f, [k]: v }));
 
   const cols: Col<Lead>[] = [
-    { key: "leadId", label: "Lead ID", render: (l) => <span className="text-accent font-mono text-xs">{l.leadId}</span> },
+    { key: "leadId", label: "Lead ID", render: (l) => (
+      <div className="flex flex-col gap-1">
+        <span className="text-accent font-mono text-xs">{l.leadId}</span>
+        <StatusPill label={l.origin === "ghl" ? "GHL" : "Manual"} tone={l.origin === "ghl" ? "info" : "neutral"} />
+      </div>
+    ) },
     { key: "customerName", label: "Customer", render: (l) => <span className="font-medium text-ink">{l.customerName}</span> },
     { key: "phone", label: "Phone" },
     { key: "confirmedSource", label: "Confirmed Source", render: (l) => l.confirmedSource ? l.confirmedSource : <span className="text-danger text-xs">⚠ review</span> },
@@ -152,7 +159,7 @@ export default function LeadsPage() {
 
       <Section title="All Leads">
         <div className="flex flex-wrap gap-2 mb-3">
-          {["All Leads", "Unclaimed", "Claimed", "Assigned To Me", "Booked", "Needs Follow-Up", "Needs Source Review"].map((qb) => (
+          {["All Leads", "Unclaimed", "Claimed", "Assigned To Me", "Booked", "Needs Follow-Up", "Needs Source Review", "Imported from GHL", "Manual Entry"].map((qb) => (
             <button key={qb} onClick={() => setQuick(qb)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${quick === qb ? "bg-accent text-white border-transparent" : "bg-surface2 text-muted border-line hover:text-ink"}`}>
               {qb}{qb === "Assigned To Me" && !s.currentRep ? " (pick rep in Sales)" : ""}

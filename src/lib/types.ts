@@ -51,6 +51,7 @@ export interface Lead {
   notes: string;
   customerId: string;
   maintenanceId: string;
+  origin: string;             // "ghl" (webhook) | "manual"
 }
 
 export interface Job {
