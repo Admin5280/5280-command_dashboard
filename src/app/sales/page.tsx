@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Lead, Job, CareClubLead } from "@/lib/types";
+import { Lead, Job, CareClubLead, LEAD_STATUSES, LEAD_SOURCES, SOURCE_REVIEW_STATUSES, CLAIM_STATUSES } from "@/lib/types";
 import { money, pct, prettyDate, safeDiv, groupBy, sum, today } from "@/lib/format";
 import { byGroup, isConverted } from "@/lib/metrics";
 import { salesPayroll } from "@/lib/pay";
-import { Badge, BarList, Button, Card, ClaimPill, Kpi, LinkOut, PageHeader, Section, Select, Table, Col } from "@/components/ui";
+import { Badge, BarList, Button, Card, ClaimPill, Field, Input, Kpi, LinkOut, Modal, PageHeader, Section, Select, Table, Textarea, Col } from "@/components/ui";
 
 export default function SalesPage() {
   const s = useStore();
@@ -102,6 +102,12 @@ function RepDashboard({ rep }: { rep: string }) {
     s.updateLead({ ...l, assignedSalesRep: newRep, claimStatus: l.assignedSalesRep ? "Reassigned" : "Assigned" });
   }
 
+  // inline lead editing from the Sales dashboard
+  const [editLead, setEditLead] = useState<Lead | null>(null);
+  const set = (patch: Partial<Lead>) => setEditLead((f) => (f ? { ...f, ...patch } : f));
+  function saveEdit() { if (editLead) { s.updateLead(editLead); setEditLead(null); } }
+  const editCol: Col<Lead> = { key: "edit", label: "", render: (l) => <Button variant="ghost" onClick={() => setEditLead({ ...l })}>Edit</Button> };
+
   const repSelect = (l: Lead) => (
     <select value={l.assignedSalesRep} onChange={(e) => reassign(l, e.target.value)}
       className="bg-base border border-line rounded px-2 py-1 text-xs text-ink" onClick={(e) => e.stopPropagation()}>
@@ -167,12 +173,40 @@ function RepDashboard({ rep }: { rep: string }) {
         </div>
       </Section>
 
-      <Section title={`My Lead Inbox (${repLeads.length})`}><Table cols={leadCols} rows={repLeads} empty="No leads assigned to you." /></Section>
-      <Section title={`My Unclaimed Leads (${unclaimedPool.length})`}><Table cols={[...leadCols.slice(0, 6), claimCol]} rows={unclaimedPool} empty="No unclaimed leads in the pool." /></Section>
-      <Section title={`My Follow-Ups (${followUps.length})`}><Table cols={leadCols} rows={followUps} empty="No follow-ups due. ✓" /></Section>
-      <Section title={`My Booked Leads (${booked.length})`}><Table cols={leadCols.slice(0, 7)} rows={booked} empty="No booked leads yet." /></Section>
+      <Section title={`My Lead Inbox (${repLeads.length})`}><Table cols={[...leadCols, editCol]} rows={repLeads} empty="No leads assigned to you." /></Section>
+      <Section title={`My Unclaimed Leads (${unclaimedPool.length})`}><Table cols={[...leadCols.slice(0, 6), claimCol, editCol]} rows={unclaimedPool} empty="No unclaimed leads in the pool." /></Section>
+      <Section title={`My Follow-Ups (${followUps.length})`}><Table cols={[...leadCols, editCol]} rows={followUps} empty="No follow-ups due. ✓" /></Section>
+      <Section title={`My Booked Leads (${booked.length})`}><Table cols={[...leadCols.slice(0, 7), editCol]} rows={booked} empty="No booked leads yet." /></Section>
       <Section title={`My Completed Jobs (${repJobs.length})`}><Table cols={jobCols} rows={repJobs} empty="No completed jobs." /></Section>
       <Section title={`My Care Club Leads (${repCare.length})`}><Table cols={careCols} rows={repCare} empty="No Care Club leads assigned." /></Section>
+
+      <Modal open={!!editLead} onClose={() => setEditLead(null)} title={editLead ? `Edit Lead · ${editLead.leadId}` : "Edit Lead"}>
+        {editLead && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Customer Name"><Input value={editLead.customerName} onChange={(e) => set({ customerName: e.target.value })} /></Field>
+              <Field label="Phone"><Input value={editLead.phone} onChange={(e) => set({ phone: e.target.value })} /></Field>
+              <Field label="Email"><Input value={editLead.email} onChange={(e) => set({ email: e.target.value })} /></Field>
+              <Field label="Service Interest"><Select options={s.services} value={editLead.serviceInterest} onChange={(e) => set({ serviceInterest: e.target.value })} /></Field>
+              <Field label="Confirmed Source (final)"><Select options={["", ...LEAD_SOURCES]} value={editLead.confirmedSource} onChange={(e) => set({ confirmedSource: e.target.value })} /></Field>
+              <Field label="Source Review Status"><Select options={SOURCE_REVIEW_STATUSES as unknown as string[]} value={editLead.sourceReviewStatus} onChange={(e) => set({ sourceReviewStatus: e.target.value as Lead["sourceReviewStatus"] })} /></Field>
+              <Field label="Claim Status"><Select options={CLAIM_STATUSES as unknown as string[]} value={editLead.claimStatus} onChange={(e) => set({ claimStatus: e.target.value as Lead["claimStatus"] })} /></Field>
+              <Field label="Assigned Sales Rep"><Select options={["", ...s.salesReps]} value={editLead.assignedSalesRep} onChange={(e) => set({ assignedSalesRep: e.target.value })} /></Field>
+              <Field label="Lead Status"><Select options={LEAD_STATUSES as unknown as string[]} value={editLead.status} onChange={(e) => set({ status: e.target.value as Lead["status"] })} /></Field>
+              <Field label="Next Follow-Up"><Input type="date" value={editLead.nextFollowUp} onChange={(e) => set({ nextFollowUp: e.target.value })} /></Field>
+              <Field label="Quote Amount"><Input type="number" value={editLead.quoteAmount} onChange={(e) => set({ quoteAmount: +e.target.value })} /></Field>
+              <Field label="Booked Date"><Input type="date" value={editLead.bookedDate} onChange={(e) => set({ bookedDate: e.target.value })} /></Field>
+              <Field label="Booked Job Value"><Input type="number" value={editLead.bookedJobValue} onChange={(e) => set({ bookedJobValue: +e.target.value })} /></Field>
+              <Field label="GHL Contact Link"><Input value={editLead.ghlContactLink} onChange={(e) => set({ ghlContactLink: e.target.value })} /></Field>
+              <div className="sm:col-span-3"><Field label="Notes"><Textarea rows={2} value={editLead.notes} onChange={(e) => set({ notes: e.target.value })} /></Field></div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button onClick={() => setEditLead(null)}>Cancel</Button>
+              <Button variant="accent" onClick={saveEdit}>Save Changes</Button>
+            </div>
+          </>
+        )}
+      </Modal>
     </>
   );
 }
