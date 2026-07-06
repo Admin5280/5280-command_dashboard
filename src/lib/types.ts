@@ -1,8 +1,8 @@
 export type LeadStatus =
-  | "New Lead" | "Contacted" | "Estimate Sent" | "Booked" | "Completed Job" | "Care Club Sold" | "Lost" | "No Response";
+  | "New Lead" | "Contacted" | "Estimate Sent" | "Follow-Up Needed" | "Booked" | "Completed Job" | "Care Club Sold" | "Lost" | "No Response";
 
 export const LEAD_STATUSES: LeadStatus[] = [
-  "New Lead", "Contacted", "Estimate Sent", "Booked", "Completed Job", "Care Club Sold", "Lost", "No Response",
+  "New Lead", "Contacted", "Estimate Sent", "Follow-Up Needed", "Booked", "Completed Job", "Care Club Sold", "Lost", "No Response",
 ];
 
 export const LEAD_SOURCES = [
@@ -23,6 +23,9 @@ export type PayStatus = "Pending Review" | "Approved" | "Exported" | "Paid" | "H
 export const PAY_STATUSES: PayStatus[] = ["Pending Review", "Approved", "Exported", "Paid", "Hold"];
 export type CommissionStatus = "Not Eligible" | "Pending Review" | "Eligible" | "Approved" | "Exported" | "Paid" | "Hold" | "";
 export const COMMISSION_STATUSES: CommissionStatus[] = ["Not Eligible", "Pending Review", "Eligible", "Approved", "Exported", "Paid", "Hold"];
+
+export type ReviewRequestStatus = "Not Sent" | "Sent" | "Received" | "Declined";
+export const REVIEW_REQUEST_STATUSES: ReviewRequestStatus[] = ["Not Sent", "Sent", "Received", "Declined"];
 
 export interface Lead {
   id: string;                 // internal record id
@@ -86,6 +89,13 @@ export interface Job {
   assignedSalesRep: string;   // from lead
   techPayStatus: PayStatus;
   salesCommissionStatus: CommissionStatus;
+  // quality & reputation
+  reviewRequestStatus: ReviewRequestStatus;
+  reviewReceived: boolean;
+  rating: number;             // 0 = none, else 1–5
+  reviewNegative: boolean;
+  callbackCount: number;
+  redoCount: number;
   adminNotes: string;
   customerId: string;
   historical: boolean;

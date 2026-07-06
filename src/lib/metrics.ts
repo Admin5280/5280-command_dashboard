@@ -4,7 +4,12 @@ import { groupBy, safeDiv, sum } from "./format";
 /** A "completed" job = a production row with a completion date. */
 export const completed = (jobs: Job[]) => jobs.filter((j) => !!j.dateCompleted);
 export const revenue = (j: Job) => j.totalRevenue || 0;
-export const bookedLeads = (leads: Lead[]) => leads.filter((l) => l.status === "Booked" || l.status === "Care Club Sold");
+
+/** A lead is "converted / won" once it books — this includes leads whose job has
+ *  since completed (auto-moved to "Completed Job") and Care Club sales. */
+export const CONVERTED_STATUSES = ["Booked", "Completed Job", "Care Club Sold"];
+export const isConverted = (status: string) => CONVERTED_STATUSES.includes(status);
+export const bookedLeads = (leads: Lead[]) => leads.filter((l) => isConverted(l.status));
 
 export interface Overview {
   totalLeads: number; bookedJobs: number; completedJobs: number; closeRate: number;
@@ -56,7 +61,7 @@ export function marketingByChannel(
   return [...channels].map((ch) => {
     const spend = sum(marketing.filter((m) => m.channel === ch && inR(m.date)), (m) => m.spend);
     const chLeads = leads.filter((l) => l.confirmedSource === ch && inR(l.dateCreated)).length;
-    const bookings = leads.filter((l) => l.confirmedSource === ch && (l.status === "Booked" || l.status === "Care Club Sold") && inR(l.bookedDate)).length;
+    const bookings = leads.filter((l) => l.confirmedSource === ch && isConverted(l.status) && inR(l.bookedDate)).length;
     const compJobs = jobs.filter((j) => j.confirmedSource === ch && inR(j.dateCompleted));
     const revenue = sum(compJobs, (j) => j.totalRevenue);
     return {

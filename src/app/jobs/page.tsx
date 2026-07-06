@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Job, Lead, JOB_TYPES, JOB_PAYMENT_STATUSES, PAYMENT_METHODS, PAY_STATUSES, COMMISSION_STATUSES,
-  CARE_UNITS, jobTotalRevenue } from "@/lib/types";
+  CARE_UNITS, REVIEW_REQUEST_STATUSES, jobTotalRevenue } from "@/lib/types";
 import { jobHealth } from "@/lib/guardrails";
+import { serviceQuality } from "@/lib/quality";
 import { money, prettyDate, today } from "@/lib/format";
 import { toCSV, download } from "@/lib/csv";
 import { Badge, Button, Field, Input, LinkOut, Modal, PageHeader, Section, Select, StatusPill, Table, Textarea, Col } from "@/components/ui";
@@ -16,6 +17,7 @@ const blank = (): Omit<Job, "id"> => ({
   subtotal: 0, upsellAddOns: "", techUpsellAmount: 0, discount: 0, tip: 0, addOnsValue: 0,
   totalRevenue: 0, salesTotalRevenue: 0, amountPaid: 0, amountDue: 0, paymentStatus: "Fully Paid", paymentMethod: "Stripe",
   confirmedSource: "", assignedSalesRep: "", techPayStatus: "Pending Review", salesCommissionStatus: "Pending Review",
+  reviewRequestStatus: "Not Sent", reviewReceived: false, rating: 0, reviewNegative: false, callbackCount: 0, redoCount: 0,
   adminNotes: "", customerId: "", historical: false, createdAt: today(), updatedAt: today(),
 });
 
@@ -94,6 +96,7 @@ export default function JobsPage() {
   ];
 
   const health = editing ? jobHealth({ ...form, id: editing.id } as Job, s.leads) : jobHealth({ ...form, id: "" } as Job, s.leads);
+  const svcRow = useMemo(() => serviceQuality(s.jobs, "", "").find((r) => r.service === form.services), [s.jobs, form.services]);
 
   return (
     <div>
@@ -166,7 +169,25 @@ export default function JobsPage() {
           <Field label="Tech Pay Status"><Select options={PAY_STATUSES as unknown as string[]} value={form.techPayStatus} onChange={(e) => set({ techPayStatus: e.target.value as Job["techPayStatus"] })} /></Field>
           <Field label="Sales Commission Status"><Select options={COMMISSION_STATUSES as unknown as string[]} value={form.salesCommissionStatus} onChange={(e) => set({ salesCommissionStatus: e.target.value as Job["salesCommissionStatus"] })} /></Field>
           <Field label="Historical?"><Select options={["No", "Yes"]} value={form.historical ? "Yes" : "No"} onChange={(e) => set({ historical: e.target.value === "Yes" })} /></Field>
-          <div className="sm:col-span-3"><Field label="Admin Notes"><Textarea rows={2} value={form.adminNotes} onChange={(e) => set({ adminNotes: e.target.value })} /></Field></div>
+        </div>
+
+        <div className="mt-4 mb-1 text-xs uppercase tracking-wide text-muted">Quality & Reputation</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Field label="Review Request Status"><Select options={REVIEW_REQUEST_STATUSES as unknown as string[]} value={form.reviewRequestStatus} onChange={(e) => set({ reviewRequestStatus: e.target.value as Job["reviewRequestStatus"] })} /></Field>
+          <Field label="Review Received"><Select options={["No", "Yes"]} value={form.reviewReceived ? "Yes" : "No"} onChange={(e) => set({ reviewReceived: e.target.value === "Yes" })} /></Field>
+          <Field label="Rating (1–5)"><Input type="number" min={0} max={5} value={form.rating} onChange={(e) => set({ rating: +e.target.value })} /></Field>
+          <Field label="Negative Review"><Select options={["No", "Yes"]} value={form.reviewNegative ? "Yes" : "No"} onChange={(e) => set({ reviewNegative: e.target.value === "Yes" })} /></Field>
+          <Field label="Callback Count"><Input type="number" min={0} value={form.callbackCount} onChange={(e) => set({ callbackCount: +e.target.value })} /></Field>
+          <Field label="Redo Count"><Input type="number" min={0} value={form.redoCount} onChange={(e) => set({ redoCount: +e.target.value })} /></Field>
+          <div className="sm:col-span-3">
+            <Field label={`Quality Status — ${form.services || "service"}`}>
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-base border border-line">
+                {svcRow ? <StatusPill label={svcRow.status} tone={svcRow.tone} /> : <span className="text-muted text-sm">No completed jobs for this service yet.</span>}
+                {svcRow && <span className="text-xs text-muted">Callback impact: {(svcRow.callbackPct * 100).toFixed(1)}% · Review {(svcRow.reviewPct * 100).toFixed(0)}% · Avg {svcRow.avgRating.toFixed(1)}★</span>}
+              </div>
+            </Field>
+          </div>
+          <div className="sm:col-span-3"><Field label="Admin Notes / Resolution Notes"><Textarea rows={2} value={form.adminNotes} onChange={(e) => set({ adminNotes: e.target.value })} /></Field></div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button onClick={() => setOpen(false)}>Cancel</Button>

@@ -99,23 +99,26 @@ function PayRulesEditor() {
 function BasePayEditor() {
   const s = useStore();
   type Draft = Omit<TechBasePayRule, "id"> & { id?: string };
-  const seed = (): Record<string, Draft> => {
-    const map: Record<string, Draft> = {};
-    for (const t of s.technicians) {
-      const r = s.techBasePay.find((x) => x.technicianName === t);
-      map[t] = r ? { ...r } : { technicianName: t, basePayType: "None", basePayAmount: 0, effectiveStart: "", effectiveEnd: "", active: true, notes: "" };
-    }
-    return map;
-  };
-  const [draft, setDraft] = useState<Record<string, Draft>>(seed);
+  // edits are keyed by tech name and merged over the live store data, so
+  // technicians added in the list above appear here immediately (no crash, no reload).
+  const [edits, setEdits] = useState<Record<string, Partial<Draft>>>({});
   const [saved, setSaved] = useState(false);
-  const upd = (tech: string, patch: Partial<Draft>) => setDraft((d) => ({ ...d, [tech]: { ...d[tech], ...patch } }));
+
+  const rowFor = (t: string): Draft => {
+    const existing = s.techBasePay.find((x) => x.technicianName === t);
+    const base: Draft = existing
+      ? { ...existing }
+      : { technicianName: t, basePayType: "None", basePayAmount: 0, effectiveStart: "", effectiveEnd: "", active: true, notes: "" };
+    return { ...base, ...edits[t] };
+  };
+  const upd = (tech: string, patch: Partial<Draft>) => setEdits((e) => ({ ...e, [tech]: { ...e[tech], ...patch } }));
 
   function save() {
     for (const t of s.technicians) {
-      const row = draft[t];
-      if (row.id) s.updateBasePay(row as TechBasePayRule); else s.addBasePay(row);
+      const row = rowFor(t);
+      if (row.id) s.updateBasePay(row as TechBasePayRule); else s.addBasePay({ ...row });
     }
+    setEdits({});
     setSaved(true); setTimeout(() => setSaved(false), 2500);
   }
 
@@ -132,7 +135,7 @@ function BasePayEditor() {
           </tr></thead>
           <tbody>
             {s.technicians.map((t) => {
-              const r = draft[t];
+              const r = rowFor(t);
               return (
                 <tr key={t} className="border-b border-line/60">
                   <td className="px-2 py-1.5 text-ink font-medium whitespace-nowrap">{t}</td>

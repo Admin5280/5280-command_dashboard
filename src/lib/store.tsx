@@ -17,6 +17,9 @@ interface Store extends AppData {
   to: string;
   setRange: (from: string, to: string) => void;
   inRange: (iso: string) => boolean;
+  // "current user" sales rep (shared by Sales dashboard + Leads "Assigned To Me")
+  currentRep: string;
+  setCurrentRep: (rep: string) => void;
 
   addLead: (l: Omit<Lead, "id">) => void;
   updateLead: (l: Lead) => void;
@@ -121,10 +124,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [currentRep, setCurrentRepState] = useState("");
 
   // hydrate from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
     setData(load());
+    try { setCurrentRepState(localStorage.getItem("5280-current-rep") ?? ""); } catch { /* ignore */ }
     setReady(true);
   }, []);
 
@@ -151,6 +156,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       from, to,
       setRange: (f, t) => { setFrom(f); setTo(t); },
       inRange,
+      currentRep,
+      setCurrentRep: (rep) => { setCurrentRepState(rep); try { localStorage.setItem("5280-current-rep", rep); } catch { /* ignore */ } },
 
       addLead: (l) => addTo("leads", { ...l, id: uid() }),
       updateLead: (l) => upd("leads", l),
@@ -227,7 +234,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       resetSample: () => setData(sampleData()),
       clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
     };
-  }, [data, ready, from, to]);
+  }, [data, ready, from, to, currentRep]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

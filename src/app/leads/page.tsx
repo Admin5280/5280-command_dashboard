@@ -8,7 +8,7 @@ import { leadFlags } from "@/lib/guardrails";
 import { memberFromLead } from "@/lib/careClub";
 import { money, prettyDate, today } from "@/lib/format";
 import { toCSV, download } from "@/lib/csv";
-import { Badge, Button, Card, Field, Input, LinkOut, Modal, PageHeader, Section, Select, Table, Textarea, WarnPill, Col } from "@/components/ui";
+import { Badge, Button, Card, ClaimPill, Field, Input, LinkOut, Modal, PageHeader, Section, Select, Table, Textarea, WarnPill, Col } from "@/components/ui";
 
 const blank = (leadId: string): Omit<Lead, "id"> => ({
   leadId, ghlContactId: "", ghlContactLink: "", dateCreated: today(), customerName: "", phone: "", email: "",
@@ -33,21 +33,39 @@ export default function LeadsPage() {
   const [form, setForm] = useState<Omit<Lead, "id">>(blank(""));
   const [fSource, setFSource] = useState("All");
   const [fStatus, setFStatus] = useState("All");
+  const [fClaim, setFClaim] = useState("All");
   const [fRep, setFRep] = useState("All");
+  const [quick, setQuick] = useState("All Leads");
   const [q, setQ] = useState("");
+  const t = today();
 
   const careLeadIds = useMemo(() => new Set(s.careClubLeads.map((c) => c.originalLeadId).filter(Boolean)), [s.careClubLeads]);
 
   const searchText = (l: Lead) =>
     `${l.leadId} ${l.customerName} ${l.phone} ${l.email} ${l.confirmedSource} ${l.serviceInterest} ${l.assignedSalesRep} ${l.status} ${l.notes}`.toLowerCase();
 
+  const openStatus = (st: string) => !["Booked", "Completed Job", "Care Club Sold", "Lost"].includes(st);
+  const quickMatch = (l: Lead) => {
+    switch (quick) {
+      case "Unclaimed": return l.claimStatus === "Unclaimed";
+      case "Claimed": return l.claimStatus === "Claimed";
+      case "Assigned To Me": return !!s.currentRep && l.assignedSalesRep === s.currentRep;
+      case "Booked": return l.status === "Booked" || l.status === "Care Club Sold";
+      case "Needs Follow-Up": return l.status === "Follow-Up Needed" || l.status === "No Response" || (!!l.nextFollowUp && l.nextFollowUp <= t && openStatus(l.status));
+      case "Needs Source Review": return !l.confirmedSource;
+      default: return true;
+    }
+  };
+
   const rows = useMemo(() => s.leads
     .filter((l) => s.inRange(l.dateCreated))
     .filter((l) => fSource === "All" || l.confirmedSource === fSource || l.rawSource === fSource)
     .filter((l) => fStatus === "All" || l.status === fStatus)
+    .filter((l) => fClaim === "All" || l.claimStatus === fClaim)
     .filter((l) => fRep === "All" || l.assignedSalesRep === fRep)
+    .filter(quickMatch)
     .filter((l) => !q || searchText(l).includes(q.toLowerCase())),
-    [s.leads, s.from, s.to, fSource, fStatus, fRep, q]);
+    [s.leads, s.from, s.to, fSource, fStatus, fClaim, fRep, quick, s.currentRep, q]);
 
   const booked = useMemo(() => s.leads.filter((l) => l.status === "Booked" || l.status === "Care Club Sold"), [s.leads]);
 
@@ -77,6 +95,7 @@ export default function LeadsPage() {
         {l.leadId && careLeadIds.has(l.leadId) && <span className="text-[10px] text-accent">→ Moved to Care Club Pipeline</span>}
       </div>
     ) },
+    { key: "claimStatus", label: "Claim", render: (l) => <ClaimPill status={l.claimStatus} /> },
     { key: "assignedSalesRep", label: "Rep" },
     { key: "quoteAmount", label: "Quote", render: (l) => <span className="tabular-nums">{money(l.quoteAmount)}</span> },
     { key: "ghl", label: "GHL", render: (l) => <LinkOut href={l.ghlContactLink} /> },
@@ -133,8 +152,17 @@ export default function LeadsPage() {
 
       <Section title="All Leads">
         <div className="flex flex-wrap gap-2 mb-3">
+          {["All Leads", "Unclaimed", "Claimed", "Assigned To Me", "Booked", "Needs Follow-Up", "Needs Source Review"].map((qb) => (
+            <button key={qb} onClick={() => setQuick(qb)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${quick === qb ? "bg-accent text-white border-transparent" : "bg-surface2 text-muted border-line hover:text-ink"}`}>
+              {qb}{qb === "Assigned To Me" && !s.currentRep ? " (pick rep in Sales)" : ""}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
           <Select options={["All", ...LEAD_SOURCES]} value={fSource} onChange={(e) => setFSource(e.target.value)} className="w-auto" />
           <Select options={["All", ...LEAD_STATUSES]} value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="w-auto" />
+          <Select options={["All", ...CLAIM_STATUSES]} value={fClaim} onChange={(e) => setFClaim(e.target.value)} className="w-auto" />
           <Select options={["All", ...s.salesReps]} value={fRep} onChange={(e) => setFRep(e.target.value)} className="w-auto" />
           <Input placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
         </div>

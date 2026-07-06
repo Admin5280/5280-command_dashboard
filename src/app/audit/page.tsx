@@ -6,8 +6,9 @@ import { useStore } from "@/lib/store";
 import { Job } from "@/lib/types";
 import { leadFlags, bookedNotInJobs, completedJobsMissingCareLead, dupCareLeadsBy, soldCareLeadsWithoutMember } from "@/lib/guardrails";
 import { careAudit } from "@/lib/careClub";
+import { serviceQuality } from "@/lib/quality";
 import { completed, marketingByChannel } from "@/lib/metrics";
-import { money, sum } from "@/lib/format";
+import { money, sum, today } from "@/lib/format";
 import { Card, Kpi, PageHeader, Section } from "@/components/ui";
 
 interface Row { name: string; count: number; sample: string; href?: string; }
@@ -74,6 +75,44 @@ export default function AuditPage() {
     ];
   }, [s.jobs, s.careClubLeads, s.careMembers]);
 
+  const claimChecks = useMemo<Row[]>(() => {
+    const t = today();
+    const repSet = new Set(s.salesReps);
+    const oldUnclaimed = s.leads.filter((l) => l.claimStatus === "Unclaimed" && l.dateCreated && l.dateCreated < t);
+    const inactiveRep = s.leads.filter((l) => l.assignedSalesRep && !repSet.has(l.assignedSalesRep));
+    const bookedUnclaimed = s.leads.filter((l) => (l.status === "Booked" || l.status === "Care Club Sold") && l.claimStatus === "Unclaimed");
+    const blankRep = s.leads.filter((l) => !l.assignedSalesRep);
+    const overdue = s.leads.filter((l) => l.nextFollowUp && l.nextFollowUp < t && !["Booked", "Completed Job", "Care Club Sold", "Lost"].includes(l.status));
+    const overdueByRep = Object.entries(overdue.reduce<Record<string, number>>((a, l) => { const r = l.assignedSalesRep || "Unassigned"; a[r] = (a[r] || 0) + 1; return a; }, {}))
+      .map(([r, n]) => `${r}: ${n}`).join(", ");
+    return [
+      { name: "Unclaimed leads older than 24 hours", count: oldUnclaimed.length, sample: oldUnclaimed.slice(0, 6).map((l) => l.leadId).join(", "), href: "/leads" },
+      { name: "Leads assigned to inactive sales reps", count: inactiveRep.length, sample: [...new Set(inactiveRep.map((l) => l.assignedSalesRep))].join(", "), href: "/leads" },
+      { name: "Booked leads still Unclaimed", count: bookedUnclaimed.length, sample: bookedUnclaimed.slice(0, 6).map((l) => l.leadId).join(", "), href: "/leads" },
+      { name: "Leads with Assigned Sales Rep blank", count: blankRep.length, sample: blankRep.slice(0, 6).map((l) => l.leadId).join(", "), href: "/leads" },
+      { name: "Follow-ups overdue (by rep)", count: overdue.length, sample: overdueByRep, href: "/sales" },
+    ];
+  }, [s.leads, s.salesReps]);
+
+  const qualityChecks = useMemo<Row[]>(() => {
+    const q = serviceQuality(s.jobs, s.from, s.to);
+    const cbHigh = q.filter((r) => r.callbackPct > 0.10);
+    const revLow = q.filter((r) => r.completed > 0 && r.reviewPct < 0.30);
+    const ratingLow = q.filter((r) => r.avgRating > 0 && r.avgRating < 4.5);
+    const neg = q.filter((r) => r.negativeReviews > 0);
+    const cbJobs = s.jobs.filter((j) => j.services === "Callback");
+    const cbNoUrable = cbJobs.filter((j) => !j.urableJobId);
+    const cbNoNotes = cbJobs.filter((j) => !j.adminNotes);
+    return [
+      { name: "Services with callback % above 10%", count: cbHigh.length, sample: cbHigh.map((r) => r.service).join(", "), href: "/quality" },
+      { name: "Services with review % below 30%", count: revLow.length, sample: revLow.map((r) => r.service).join(", "), href: "/quality" },
+      { name: "Services with average rating below 4.5", count: ratingLow.length, sample: ratingLow.map((r) => `${r.service} (${r.avgRating.toFixed(1)})`).join(", "), href: "/quality" },
+      { name: "Services with negative reviews", count: neg.length, sample: neg.map((r) => r.service).join(", "), href: "/quality" },
+      { name: "Callback jobs missing Urable Job ID", count: cbNoUrable.length, sample: cbNoUrable.slice(0, 6).map((j) => j.customerName).join(", "), href: "/jobs" },
+      { name: "Callback jobs missing resolution notes", count: cbNoNotes.length, sample: cbNoNotes.slice(0, 6).map((j) => j.customerName).join(", "), href: "/jobs" },
+    ];
+  }, [s.jobs, s.from, s.to]);
+
   const bookedGap = useMemo(() => bookedNotInJobs(s.leads, s.jobs), [s.leads, s.jobs]);
   const careChecks = useMemo(() => careAudit(s.careMembers, s.careVisits, s.jobs), [s.careMembers, s.careVisits, s.jobs]);
 
@@ -87,7 +126,7 @@ export default function AuditPage() {
     (j.paymentStatus === "Fully Paid" && j.amountDue > 0) ||
     (j.paymentStatus === "Unpaid" && j.amountPaid > 0));
 
-  const allRows = [...leadChecks, ...jobChecks, ...marketingChecks, ...careLeadChecks];
+  const allRows = [...leadChecks, ...jobChecks, ...claimChecks, ...qualityChecks, ...marketingChecks, ...careLeadChecks];
   const openIssues = sum(allRows, (r) => r.count) + bookedGap.length + sum(careChecks, (c) => c.count) + payMismatch.length + (revMismatch !== 0 ? 1 : 0);
 
   const CheckTable = ({ rows }: { rows: Row[] }) => (
@@ -133,7 +172,9 @@ export default function AuditPage() {
       </div>
 
       <Section title="Lead Guardrails"><CheckTable rows={leadChecks} /></Section>
+      <Section title="Sales & Claim Checks"><CheckTable rows={claimChecks} /></Section>
       <Section title="Job Health & Payroll Readiness"><CheckTable rows={jobChecks} /></Section>
+      <Section title="Quality & Reputation Checks"><CheckTable rows={qualityChecks} /></Section>
       <Section title="Marketing Checks"><CheckTable rows={marketingChecks} /></Section>
       <Section title="Care Club Pipeline Checks"><CheckTable rows={careLeadChecks} /></Section>
 

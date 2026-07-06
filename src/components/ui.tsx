@@ -120,9 +120,20 @@ export function WarnPill({ flags }: { flags: string[] }) {
   );
 }
 
-export function StatusPill({ label, tone }: { label: string; tone: "good" | "warn" | "danger" }) {
-  const cls = tone === "good" ? "bg-good/15 text-good" : tone === "danger" ? "bg-danger/15 text-danger" : "bg-gold/15 text-gold";
+export function StatusPill({ label, tone }: { label: string; tone: "good" | "warn" | "danger" | "info" | "neutral" }) {
+  const cls = {
+    good: "bg-good/15 text-good", warn: "bg-gold/15 text-gold", danger: "bg-danger/15 text-danger",
+    info: "bg-accent/15 text-accent", neutral: "bg-white/10 text-muted",
+  }[tone];
   return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cls}`}>{label}</span>;
+}
+
+const CLAIM_TONE: Record<string, "good" | "warn" | "danger" | "info" | "neutral"> = {
+  Unclaimed: "warn", Claimed: "info", Assigned: "good", Reassigned: "neutral",
+};
+export function ClaimPill({ status }: { status: string }) {
+  if (!status) return <span className="text-muted">—</span>;
+  return <StatusPill label={status} tone={CLAIM_TONE[status] ?? "neutral"} />;
 }
 
 export function LinkOut({ href, label = "open" }: { href: string; label?: string }) {

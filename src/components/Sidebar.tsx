@@ -11,6 +11,7 @@ export const NAV = [
   { href: "/marketing", label: "Marketing", icon: "◈" },
   { href: "/sales", label: "Sales", icon: "◭" },
   { href: "/operations", label: "Operations", icon: "⛭" },
+  { href: "/quality", label: "Quality", icon: "★" },
   { href: "/payroll", label: "Payroll", icon: "◱" },
   { href: "/finance", label: "Finance", icon: "$" },
   { href: "/audit", label: "Audit", icon: "❑" },
