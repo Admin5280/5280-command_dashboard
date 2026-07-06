@@ -1,8 +1,8 @@
 export type LeadStatus =
-  | "New Lead" | "Contacted" | "Estimate Sent" | "Booked" | "Care Club Sold" | "Lost" | "No Response";
+  | "New Lead" | "Contacted" | "Estimate Sent" | "Booked" | "Completed Job" | "Care Club Sold" | "Lost" | "No Response";
 
 export const LEAD_STATUSES: LeadStatus[] = [
-  "New Lead", "Contacted", "Estimate Sent", "Booked", "Care Club Sold", "Lost", "No Response",
+  "New Lead", "Contacted", "Estimate Sent", "Booked", "Completed Job", "Care Club Sold", "Lost", "No Response",
 ];
 
 export const LEAD_SOURCES = [
@@ -212,6 +212,80 @@ export const DEFAULT_PAY_RULES: PayRules = {
   sales: { commissionPct: 0.06, baseGuarantee: 400, requireCompletedPaidJob: true },
 };
 
+/* ---------------- Technician base pay ---------------- */
+export type BasePayType = "Weekly Base" | "Daily Base" | "Per Job Base" | "None";
+export const BASE_PAY_TYPES: BasePayType[] = ["Weekly Base", "Daily Base", "Per Job Base", "None"];
+
+export interface TechBasePayRule {
+  id: string;
+  technicianName: string;
+  basePayType: BasePayType;
+  basePayAmount: number;
+  effectiveStart: string;
+  effectiveEnd: string;
+  active: boolean;
+  notes: string;
+}
+
+/* ---------------- Care Club sales pipeline ---------------- */
+export type CareLeadStatus =
+  | "New Care Club Lead" | "Contacted" | "Offer Sent" | "Follow-Up Needed" | "Interested"
+  | "Sold" | "Not Interested" | "Lost" | "No Response";
+export const CARE_LEAD_STATUSES: CareLeadStatus[] = [
+  "New Care Club Lead", "Contacted", "Offer Sent", "Follow-Up Needed", "Interested",
+  "Sold", "Not Interested", "Lost", "No Response",
+];
+
+export type CareOfferPresented = "Founding 100 Charter Offer" | "Standard Tier" | "Not Presented Yet";
+export const CARE_OFFERS_PRESENTED: CareOfferPresented[] = ["Founding 100 Charter Offer", "Standard Tier", "Not Presented Yet"];
+
+export type RecommendedTier =
+  | "Founding Monthly" | "Founding 12-Week Plan" | "Founding 6-Month PIF" | "Founding 12-Month PIF"
+  | "Standard Monthly" | "Standard 12-Week Plan" | "Standard 6-Month PIF" | "Standard 12-Month PIF" | "Unknown";
+export const RECOMMENDED_TIERS: RecommendedTier[] = [
+  "Founding Monthly", "Founding 12-Week Plan", "Founding 6-Month PIF", "Founding 12-Month PIF",
+  "Standard Monthly", "Standard 12-Week Plan", "Standard 6-Month PIF", "Standard 12-Month PIF", "Unknown",
+];
+
+export type CareLostReason =
+  | "Too Expensive" | "Not Interested" | "Needs Time" | "No Response" | "Already Has Maintenance" | "Bad Fit" | "Other" | "";
+export const CARE_LOST_REASONS: CareLostReason[] = [
+  "Too Expensive", "Not Interested", "Needs Time", "No Response", "Already Has Maintenance", "Bad Fit", "Other",
+];
+
+export interface CareClubLead {
+  id: string;
+  careLeadId: string;            // human key CL-xxxx
+  originalLeadId: string;        // carries the Lead ID through the journey
+  customerId: string;
+  ghlContactId: string;
+  ghlContactLink: string;
+  customerName: string;
+  phone: string;
+  email: string;
+  vehicle: string;
+  completedJobId: string;        // internal Job.id
+  urableJobId: string;
+  urableJobLink: string;
+  completedService: string;
+  completedJobDate: string;
+  completedJobRevenue: number;
+  confirmedSource: string;
+  originalSalesRep: string;
+  assignedCareRep: string;       // Assigned Care Club Sales Rep
+  assignedFounderTech: string;
+  pipelineStatus: CareLeadStatus;
+  offerPresented: CareOfferPresented;
+  recommendedTier: RecommendedTier;
+  followUpDate: string;
+  lastContactDate: string;
+  closeDate: string;
+  lostReason: CareLostReason;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppData {
   leads: Lead[];
   jobs: Job[];
@@ -223,6 +297,8 @@ export interface AppData {
   careMembers: CareMember[];
   careVisits: CareVisit[];
   carePerks: CarePerk[];
+  careClubLeads: CareClubLead[];
+  techBasePay: TechBasePayRule[];
   payRules: PayRules;
   payRulesHistory: PayRules[];
 }

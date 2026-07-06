@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { PayRules } from "@/lib/types";
+import { BASE_PAY_TYPES, BasePayType, PayRules, TechBasePayRule } from "@/lib/types";
 import { today } from "@/lib/format";
-import { Button, Card, Field, Input, PageHeader, Section } from "@/components/ui";
+import { Button, Card, Field, Input, PageHeader, Section, Select } from "@/components/ui";
 
 type Kind = "sources" | "services" | "salesReps" | "technicians";
 
@@ -96,6 +96,67 @@ function PayRulesEditor() {
   );
 }
 
+function BasePayEditor() {
+  const s = useStore();
+  type Draft = Omit<TechBasePayRule, "id"> & { id?: string };
+  const seed = (): Record<string, Draft> => {
+    const map: Record<string, Draft> = {};
+    for (const t of s.technicians) {
+      const r = s.techBasePay.find((x) => x.technicianName === t);
+      map[t] = r ? { ...r } : { technicianName: t, basePayType: "None", basePayAmount: 0, effectiveStart: "", effectiveEnd: "", active: true, notes: "" };
+    }
+    return map;
+  };
+  const [draft, setDraft] = useState<Record<string, Draft>>(seed);
+  const [saved, setSaved] = useState(false);
+  const upd = (tech: string, patch: Partial<Draft>) => setDraft((d) => ({ ...d, [tech]: { ...d[tech], ...patch } }));
+
+  function save() {
+    for (const t of s.technicians) {
+      const row = draft[t];
+      if (row.id) s.updateBasePay(row as TechBasePayRule); else s.addBasePay(row);
+    }
+    setSaved(true); setTimeout(() => setSaved(false), 2500);
+  }
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-ink">Technician Base Pay</h3>
+        <span className="text-xs text-muted">Base pay is separate from commission; applied per payroll period.</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead><tr className="text-xs uppercase tracking-wide text-muted border-b border-line">
+            {["Technician", "Base Pay Type", "Amount", "Effective Start", "Effective End", "Active", "Notes"].map((h) => <th key={h} className="text-left font-medium px-2 py-1.5 whitespace-nowrap">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {s.technicians.map((t) => {
+              const r = draft[t];
+              return (
+                <tr key={t} className="border-b border-line/60">
+                  <td className="px-2 py-1.5 text-ink font-medium whitespace-nowrap">{t}</td>
+                  <td className="px-2 py-1.5"><Select options={BASE_PAY_TYPES as unknown as string[]} value={r.basePayType} onChange={(e) => upd(t, { basePayType: e.target.value as BasePayType })} /></td>
+                  <td className="px-2 py-1.5"><Input type="number" value={r.basePayAmount} onChange={(e) => upd(t, { basePayAmount: +e.target.value })} className="w-24" /></td>
+                  <td className="px-2 py-1.5"><Input type="date" value={r.effectiveStart} onChange={(e) => upd(t, { effectiveStart: e.target.value })} className="w-36" /></td>
+                  <td className="px-2 py-1.5"><Input type="date" value={r.effectiveEnd} onChange={(e) => upd(t, { effectiveEnd: e.target.value })} className="w-36" /></td>
+                  <td className="px-2 py-1.5"><Select options={["Yes", "No"]} value={r.active ? "Yes" : "No"} onChange={(e) => upd(t, { active: e.target.value === "Yes" })} /></td>
+                  <td className="px-2 py-1.5"><Input value={r.notes} onChange={(e) => upd(t, { notes: e.target.value })} className="w-40" /></td>
+                </tr>
+              );
+            })}
+            {!s.technicians.length && <tr><td colSpan={7} className="px-2 py-4 text-center text-muted">Add technicians above first.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-3 mt-3">
+        <Button variant="accent" onClick={save}>Save Base Pay</Button>
+        {saved && <span className="text-sm text-good">✓ Saved.</span>}
+      </div>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const s = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -122,6 +183,8 @@ export default function SettingsPage() {
       </div>
 
       <Section title="Pay Rules"><PayRulesEditor /></Section>
+
+      <Section title="Technician Base Pay"><BasePayEditor /></Section>
 
       <Section title="Data & Backups">
         <Card className="p-4">

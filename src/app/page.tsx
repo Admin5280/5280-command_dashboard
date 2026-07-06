@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useStore } from "@/lib/store";
-import { overview, byGroup, countByGroup, completed, revenue } from "@/lib/metrics";
+import { overview, byGroup, countByGroup, completed, revenue, marketingByChannel } from "@/lib/metrics";
 import { careKpis } from "@/lib/careClub";
 import { money, pct } from "@/lib/format";
 import { Kpi, PageHeader, Section, BarList } from "@/components/ui";
@@ -18,6 +18,7 @@ export default function Overview() {
   const leadsByStatus = useMemo(() => countByGroup(leads, (l) => l.status), [leads]);
   const jobsByTech = useMemo(() => byGroup(completed(jobs), (j) => j.leadTech, revenue), [jobs]);
   const care = useMemo(() => careKpis(s.careMembers, s.from, s.to), [s.careMembers, s.from, s.to]);
+  const mktByChannel = useMemo(() => marketingByChannel(s.marketing, s.leads, s.jobs, s.from, s.to), [s.marketing, s.leads, s.jobs, s.from, s.to]);
 
   return (
     <div>
@@ -56,7 +57,7 @@ export default function Overview() {
         <Section title="Revenue by Confirmed Source"><BarList data={revBySource} money /></Section>
         <Section title="Leads by Status"><BarList data={leadsByStatus} /></Section>
         <Section title="Revenue by Lead Tech"><BarList data={jobsByTech} money /></Section>
-        <Section title="Bookings by Channel"><BarList data={byGroup(mkt, (m) => m.channel, (m) => m.bookedJobs)} /></Section>
+        <Section title="Bookings by Channel"><BarList data={mktByChannel.map((c) => ({ label: c.channel, value: c.bookings }))} /></Section>
       </div>
     </div>
   );

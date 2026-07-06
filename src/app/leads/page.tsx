@@ -33,7 +33,10 @@ export default function LeadsPage() {
   const [form, setForm] = useState<Omit<Lead, "id">>(blank(""));
   const [fSource, setFSource] = useState("All");
   const [fStatus, setFStatus] = useState("All");
+  const [fRep, setFRep] = useState("All");
   const [q, setQ] = useState("");
+
+  const careLeadIds = useMemo(() => new Set(s.careClubLeads.map((c) => c.originalLeadId).filter(Boolean)), [s.careClubLeads]);
 
   const searchText = (l: Lead) =>
     `${l.leadId} ${l.customerName} ${l.phone} ${l.email} ${l.confirmedSource} ${l.serviceInterest} ${l.assignedSalesRep} ${l.status} ${l.notes}`.toLowerCase();
@@ -42,8 +45,9 @@ export default function LeadsPage() {
     .filter((l) => s.inRange(l.dateCreated))
     .filter((l) => fSource === "All" || l.confirmedSource === fSource || l.rawSource === fSource)
     .filter((l) => fStatus === "All" || l.status === fStatus)
+    .filter((l) => fRep === "All" || l.assignedSalesRep === fRep)
     .filter((l) => !q || searchText(l).includes(q.toLowerCase())),
-    [s.leads, s.from, s.to, fSource, fStatus, q]);
+    [s.leads, s.from, s.to, fSource, fStatus, fRep, q]);
 
   const booked = useMemo(() => s.leads.filter((l) => l.status === "Booked" || l.status === "Care Club Sold"), [s.leads]);
 
@@ -67,7 +71,12 @@ export default function LeadsPage() {
     { key: "phone", label: "Phone" },
     { key: "confirmedSource", label: "Confirmed Source", render: (l) => l.confirmedSource ? l.confirmedSource : <span className="text-danger text-xs">⚠ review</span> },
     { key: "serviceInterest", label: "Service" },
-    { key: "status", label: "Lead Status", render: (l) => <Badge value={l.status} /> },
+    { key: "status", label: "Lead Status", render: (l) => (
+      <div className="flex flex-col gap-1">
+        <Badge value={l.status} />
+        {l.leadId && careLeadIds.has(l.leadId) && <span className="text-[10px] text-accent">→ Moved to Care Club Pipeline</span>}
+      </div>
+    ) },
     { key: "assignedSalesRep", label: "Rep" },
     { key: "quoteAmount", label: "Quote", render: (l) => <span className="tabular-nums">{money(l.quoteAmount)}</span> },
     { key: "ghl", label: "GHL", render: (l) => <LinkOut href={l.ghlContactLink} /> },
@@ -126,6 +135,7 @@ export default function LeadsPage() {
         <div className="flex flex-wrap gap-2 mb-3">
           <Select options={["All", ...LEAD_SOURCES]} value={fSource} onChange={(e) => setFSource(e.target.value)} className="w-auto" />
           <Select options={["All", ...LEAD_STATUSES]} value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="w-auto" />
+          <Select options={["All", ...s.salesReps]} value={fRep} onChange={(e) => setFRep(e.target.value)} className="w-auto" />
           <Input placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
         </div>
         <Table cols={cols} rows={rows} empty="No leads match." />

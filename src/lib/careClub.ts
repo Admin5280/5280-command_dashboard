@@ -1,4 +1,6 @@
-import { CareMember, CarePerk, CareVisit, Job, Lead, OfferType, PaymentPlan } from "./types";
+import {
+  CareClubLead, CareMember, CarePerk, CareVisit, Job, Lead, OfferType, PaymentPlan, RecommendedTier,
+} from "./types";
 import { sum, today } from "./format";
 
 /* ---------------- Pricing matrix (from the Care Club offer sheet) ---------------- */
@@ -97,6 +99,103 @@ export function memberFromLead(l: Lead): Omit<CareMember, "id"> {
     assignedSalesRep: l.assignedSalesRep, assignedFounderTech: "", preferredUnit: "",
     lastDetailDate: "", nextDetailDate: "", visitsThisMonth: 0, visitsThisYear: 0, perksUsedThisYear: 0,
     source: l.confirmedSource, notes: `Created from lead ${l.leadId}. ${l.notes}`.trim(), createdAt: t, updatedAt: t,
+  };
+}
+
+/* ---------------- Care Club sales pipeline ---------------- */
+const REC_MAP: Record<Exclude<RecommendedTier, "Unknown">, { offer: OfferType; plan: PaymentPlan }> = {
+  "Founding Monthly": { offer: "Founding 100 Charter Offer", plan: "Monthly" },
+  "Founding 12-Week Plan": { offer: "Founding 100 Charter Offer", plan: "12-Week Plan" },
+  "Founding 6-Month PIF": { offer: "Founding 100 Charter Offer", plan: "6-Month Pay-in-Full" },
+  "Founding 12-Month PIF": { offer: "Founding 100 Charter Offer", plan: "12-Month Pay-in-Full" },
+  "Standard Monthly": { offer: "Standard Tier", plan: "Monthly" },
+  "Standard 12-Week Plan": { offer: "Standard Tier", plan: "12-Week Plan" },
+  "Standard 6-Month PIF": { offer: "Standard Tier", plan: "6-Month Pay-in-Full" },
+  "Standard 12-Month PIF": { offer: "Standard Tier", plan: "12-Month Pay-in-Full" },
+};
+/** Expected annual value of a recommended plan (for pipeline value). */
+export function recommendedTierValue(tier: RecommendedTier): number {
+  if (tier === "Unknown") return 0;
+  const m = REC_MAP[tier];
+  const p = pricingFor(m.offer, m.plan);
+  return p.year1Pay || p.total;
+}
+
+/** Build a Care Club Lead from a completed job (+ its original lead if found). careLeadId is assigned by the store. */
+export function careLeadFromJob(job: Job, lead: Lead | undefined, careLeadId: string): Omit<CareClubLead, "id"> {
+  const t = today();
+  return {
+    careLeadId,
+    originalLeadId: job.leadId,
+    customerId: job.customerId || lead?.customerId || "",
+    ghlContactId: lead?.ghlContactId || "",
+    ghlContactLink: job.ghlContactLink || lead?.ghlContactLink || "",
+    customerName: job.customerName || lead?.customerName || "",
+    phone: job.phone || lead?.phone || "",
+    email: job.email || lead?.email || "",
+    vehicle: job.unit || lead?.serviceInterest || "",
+    completedJobId: job.id,
+    urableJobId: job.urableJobId,
+    urableJobLink: job.urableJobLink,
+    completedService: job.services,
+    completedJobDate: job.dateCompleted,
+    completedJobRevenue: job.totalRevenue,
+    confirmedSource: job.confirmedSource || lead?.confirmedSource || "",
+    originalSalesRep: job.assignedSalesRep || lead?.assignedSalesRep || "",
+    assignedCareRep: "",
+    assignedFounderTech: "",
+    pipelineStatus: "New Care Club Lead",
+    offerPresented: "Not Presented Yet",
+    recommendedTier: "Unknown",
+    followUpDate: "",
+    lastContactDate: "",
+    closeDate: "",
+    lostReason: "",
+    notes: "",
+    createdAt: t,
+    updatedAt: t,
+  };
+}
+
+/** Draft a Care Club Member from a sold Care Club Lead (user still picks tier/plan/dates). */
+export function memberDraftFromCareLead(cl: CareClubLead): Omit<CareMember, "id"> {
+  const price = pricingFor("Founding 100 Charter Offer", "Monthly");
+  const t = today();
+  return {
+    memberNumber: "", leadId: cl.originalLeadId, customerId: cl.customerId, ghlContactId: cl.ghlContactId, ghlContactLink: cl.ghlContactLink,
+    customerName: cl.customerName, phone: cl.phone, email: cl.email, address: "", zip: "",
+    offerType: "Founding 100 Charter Offer", memberTier: "Founding 100", paymentPlan: "Monthly", memberStatus: "Pending Signup",
+    signupDate: t, startDate: "", renewalDate: "", cancelDate: "",
+    primaryVehicle: cl.vehicle, secondVehicle: "", additionalVehicles: 0,
+    monthlyRate: price.monthlyRate, secondVehicleRate: 0, onboardingFee: price.onboarding, amountDueToday: price.dueToday,
+    totalContractValue: price.year1Pay, amountPaid: 0, amountDue: price.year1Pay, paymentStatus: "Unpaid", paymentMethod: "Stripe",
+    assignedSalesRep: cl.assignedCareRep || cl.originalSalesRep, assignedFounderTech: cl.assignedFounderTech, preferredUnit: "",
+    lastDetailDate: "", nextDetailDate: "", visitsThisMonth: 0, visitsThisYear: 0, perksUsedThisYear: 0,
+    source: cl.confirmedSource, notes: `From Care Club lead ${cl.careLeadId} (job ${cl.urableJobId}). ${cl.notes}`.trim(),
+    createdAt: t, updatedAt: t,
+  };
+}
+
+export interface CareLeadKpis {
+  total: number; fresh: number; contacted: number; offersSent: number; followUpsDue: number;
+  interested: number; sold: number; lost: number; noResponse: number; closeRate: number; pipelineValue: number;
+}
+export function careLeadKpis(leads: CareClubLead[]): CareLeadKpis {
+  const t = today();
+  const open = (s: string) => !["Sold", "Lost", "Not Interested"].includes(s);
+  const sold = leads.filter((l) => l.pipelineStatus === "Sold").length;
+  return {
+    total: leads.length,
+    fresh: leads.filter((l) => l.pipelineStatus === "New Care Club Lead").length,
+    contacted: leads.filter((l) => l.pipelineStatus === "Contacted").length,
+    offersSent: leads.filter((l) => l.pipelineStatus === "Offer Sent").length,
+    followUpsDue: leads.filter((l) => l.followUpDate && l.followUpDate <= t && open(l.pipelineStatus)).length,
+    interested: leads.filter((l) => l.pipelineStatus === "Interested").length,
+    sold,
+    lost: leads.filter((l) => l.pipelineStatus === "Lost" || l.pipelineStatus === "Not Interested").length,
+    noResponse: leads.filter((l) => l.pipelineStatus === "No Response").length,
+    closeRate: leads.length ? sold / leads.length : 0,
+    pipelineValue: sum(leads.filter((l) => open(l.pipelineStatus)), (l) => recommendedTierValue(l.recommendedTier)),
   };
 }
 

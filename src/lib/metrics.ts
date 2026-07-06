@@ -40,6 +40,32 @@ export function overview(leads: Lead[], jobs: Job[], marketing: MarketingSpend[]
   };
 }
 
+/* ---------------- Marketing (auto-calculated from leads & jobs by Confirmed Source) ---------------- */
+export interface MarketingRow {
+  channel: string; spend: number; leads: number; bookings: number; completed: number; revenue: number;
+  cpl: number; cpb: number; roas: number; bookingRate: number;
+}
+export function marketingByChannel(
+  marketing: MarketingSpend[], leads: Lead[], jobs: Job[], from: string, to: string,
+): MarketingRow[] {
+  const inR = (iso: string) => !!iso && (!from || iso >= from) && (!to || iso <= to);
+  const channels = new Set<string>();
+  marketing.forEach((m) => m.channel && channels.add(m.channel));
+  leads.forEach((l) => l.confirmedSource && channels.add(l.confirmedSource));
+  jobs.forEach((j) => j.confirmedSource && channels.add(j.confirmedSource));
+  return [...channels].map((ch) => {
+    const spend = sum(marketing.filter((m) => m.channel === ch && inR(m.date)), (m) => m.spend);
+    const chLeads = leads.filter((l) => l.confirmedSource === ch && inR(l.dateCreated)).length;
+    const bookings = leads.filter((l) => l.confirmedSource === ch && (l.status === "Booked" || l.status === "Care Club Sold") && inR(l.bookedDate)).length;
+    const compJobs = jobs.filter((j) => j.confirmedSource === ch && inR(j.dateCompleted));
+    const revenue = sum(compJobs, (j) => j.totalRevenue);
+    return {
+      channel: ch, spend, leads: chLeads, bookings, completed: compJobs.length, revenue,
+      cpl: safeDiv(spend, chLeads), cpb: safeDiv(spend, bookings), roas: safeDiv(revenue, spend), bookingRate: safeDiv(bookings, chLeads),
+    };
+  }).filter((r) => r.spend || r.leads || r.completed || r.revenue).sort((a, b) => b.revenue - a.revenue);
+}
+
 export function byGroup<T>(rows: T[], key: (r: T) => string, val: (r: T) => number) {
   const g = groupBy(rows, key);
   return Object.entries(g).map(([label, items]) => ({ label, value: sum(items, val) })).sort((a, b) => b.value - a.value);

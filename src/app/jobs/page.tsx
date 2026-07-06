@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Job, JOB_TYPES, JOB_PAYMENT_STATUSES, PAYMENT_METHODS, PAY_STATUSES, COMMISSION_STATUSES,
-  jobTotalRevenue } from "@/lib/types";
-import { jobFlags } from "@/lib/guardrails";
+import { Job, Lead, JOB_TYPES, JOB_PAYMENT_STATUSES, PAYMENT_METHODS, PAY_STATUSES, COMMISSION_STATUSES,
+  CARE_UNITS, jobTotalRevenue } from "@/lib/types";
+import { jobHealth } from "@/lib/guardrails";
 import { money, prettyDate, today } from "@/lib/format";
 import { toCSV, download } from "@/lib/csv";
-import { Badge, Button, Field, Input, LinkOut, Modal, PageHeader, Section, Select, Table, Textarea, WarnPill, Col } from "@/components/ui";
+import { Badge, Button, Field, Input, LinkOut, Modal, PageHeader, Section, Select, StatusPill, Table, Textarea, Col } from "@/components/ui";
 
 const blank = (): Omit<Job, "id"> => ({
   leadId: "", urableJobId: "", urableJobLink: "", ghlContactLink: "", dateCompleted: today(),
@@ -24,44 +24,56 @@ export default function JobsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Job | null>(null);
   const [form, setForm] = useState<Omit<Job, "id">>(blank());
+  const [custQ, setCustQ] = useState("");
   const [fTech, setFTech] = useState("All");
   const [fType, setFType] = useState("All");
   const [fPay, setFPay] = useState("All");
+  const [fHealth, setFHealth] = useState("All");
 
   const rows = useMemo(() => s.jobs
     .filter((j) => s.inRange(j.dateCompleted))
     .filter((j) => fTech === "All" || j.leadTech === fTech || j.helperTech === fTech)
     .filter((j) => fType === "All" || j.jobType === fType)
-    .filter((j) => fPay === "All" || j.paymentStatus === fPay),
-    [s.jobs, s.from, s.to, fTech, fType, fPay]);
+    .filter((j) => fPay === "All" || j.paymentStatus === fPay)
+    .filter((j) => fHealth === "All" || (fHealth === "Complete" ? jobHealth(j, s.leads).status === "Complete" : jobHealth(j, s.leads).status !== "Complete")),
+    [s.jobs, s.leads, s.from, s.to, fTech, fType, fPay, fHealth]);
 
   const total = jobTotalRevenue(form);
   const due = total - (form.amountPaid || 0);
 
-  function openNew() { setEditing(null); setForm(blank()); setOpen(true); }
-  function openEdit(j: Job) { setEditing(j); const { id, ...rest } = j; setForm(rest); setOpen(true); }
+  // customer/lead search for the Add Job modal
+  const custMatches = useMemo(() => {
+    const q = custQ.trim().toLowerCase();
+    if (!q) return [];
+    return s.leads.filter((l) =>
+      `${l.leadId} ${l.customerName} ${l.phone} ${l.email}`.toLowerCase().includes(q)).slice(0, 8);
+  }, [custQ, s.leads]);
+
+  function openNew() { setEditing(null); setForm(blank()); setCustQ(""); setOpen(true); }
+  function openEdit(j: Job) { setEditing(j); const { id, ...rest } = j; setForm(rest); setCustQ(""); setOpen(true); }
   function save() {
     const totalRevenue = jobTotalRevenue(form);
-    const payload: Omit<Job, "id"> = {
-      ...form, totalRevenue, amountDue: totalRevenue - (form.amountPaid || 0),
-      amountPaid: form.amountPaid === 0 && form.paymentStatus === "Fully Paid" ? totalRevenue : form.amountPaid,
-      updatedAt: today(),
-    };
-    payload.amountDue = payload.totalRevenue - payload.amountPaid;
+    const payload: Omit<Job, "id"> = { ...form, totalRevenue, updatedAt: today() };
+    if (payload.amountPaid === 0 && payload.paymentStatus === "Fully Paid") payload.amountPaid = totalRevenue;
+    payload.amountDue = totalRevenue - payload.amountPaid;
     if (editing) s.updateJob({ ...payload, id: editing.id }); else s.addJob(payload);
     setOpen(false);
   }
   const set = (patch: Partial<Omit<Job, "id">>) => setForm((f) => ({ ...f, ...patch }));
 
-  // auto-fill non-risk fields from the matching Lead when Lead ID is entered
-  function pullFromLead(leadId: string) {
-    const l = s.leads.find((x) => x.leadId === leadId);
-    if (!l) { set({ leadId }); return; }
-    set({ leadId, customerName: l.customerName, phone: l.phone, email: l.email, confirmedSource: l.confirmedSource,
-      assignedSalesRep: l.assignedSalesRep, customerId: l.customerId, ghlContactLink: l.ghlContactLink });
+  // auto-fill identity fields from a selected lead; keep the same Lead ID
+  function selectLead(l: Lead) {
+    set({
+      leadId: l.leadId, customerName: l.customerName, phone: l.phone, email: l.email,
+      confirmedSource: l.confirmedSource, assignedSalesRep: l.assignedSalesRep,
+      ghlContactLink: l.ghlContactLink, customerId: l.customerId,
+      services: form.services || l.serviceInterest,
+    });
+    setCustQ("");
   }
 
   const cols: Col<Job>[] = [
+    { key: "health", label: "Status", render: (j) => { const h = jobHealth(j, s.leads); return <StatusPill label={h.status} tone={h.tone} />; } },
     { key: "leadId", label: "Lead ID", render: (j) => <span className="font-mono text-xs text-accent">{j.leadId || "—"}</span> },
     { key: "urableJobId", label: "Urable ID", render: (j) => <span className="font-mono text-xs">{j.urableJobId || "—"}</span> },
     { key: "dateCompleted", label: "Completed", render: (j) => <span className="text-muted">{prettyDate(j.dateCompleted)}</span> },
@@ -73,7 +85,6 @@ export default function JobsPage() {
     { key: "amountDue", label: "Due", render: (j) => <span className={`tabular-nums ${j.amountDue > 0 ? "text-danger" : "text-muted"}`}>{money(j.amountDue)}</span> },
     { key: "paymentStatus", label: "Payment", render: (j) => <Badge value={j.paymentStatus} /> },
     { key: "urable", label: "Urable", render: (j) => <LinkOut href={j.urableJobLink} /> },
-    { key: "flags", label: "Checks", render: (j) => <WarnPill flags={jobFlags(j, s.jobs, s.leads)} /> },
     { key: "_", label: "", render: (j) => (
       <div className="flex gap-1 justify-end">
         <Button variant="ghost" onClick={() => openEdit(j)}>Edit</Button>
@@ -81,6 +92,8 @@ export default function JobsPage() {
       </div>
     ) },
   ];
+
+  const health = editing ? jobHealth({ ...form, id: editing.id } as Job, s.leads) : jobHealth({ ...form, id: "" } as Job, s.leads);
 
   return (
     <div>
@@ -96,21 +109,46 @@ export default function JobsPage() {
           <Select options={["All", ...s.technicians]} value={fTech} onChange={(e) => setFTech(e.target.value)} className="w-auto" />
           <Select options={["All", ...JOB_TYPES]} value={fType} onChange={(e) => setFType(e.target.value)} className="w-auto" />
           <Select options={["All", ...JOB_PAYMENT_STATUSES]} value={fPay} onChange={(e) => setFPay(e.target.value)} className="w-auto" />
+          <Select options={["All", "Complete", "Needs Review"]} value={fHealth} onChange={(e) => setFHealth(e.target.value)} className="w-auto" />
         </div>
         <Table cols={cols} rows={rows} empty="No jobs match." />
       </Section>
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit Job" : "Add Job"}>
+        {/* customer search */}
+        <div className="mb-4 bg-base border border-line rounded-lg p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted">Find customer / lead (name · phone · email · Lead ID)</span>
+            <StatusPill label={health.status} tone={health.tone} />
+          </div>
+          <div className="relative mt-1">
+            <Input placeholder="Search to auto-fill from a lead…" value={custQ} onChange={(e) => setCustQ(e.target.value)} />
+            {custMatches.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full bg-surface border border-line rounded-lg shadow-card max-h-60 overflow-y-auto">
+                {custMatches.map((l) => (
+                  <button key={l.id} onClick={() => selectLead(l)}
+                    className="w-full text-left px-3 py-2 hover:bg-surface2/60 border-b border-line/50 last:border-0">
+                    <div className="text-sm text-ink">{l.customerName} <span className="font-mono text-xs text-accent ml-1">{l.leadId}</span></div>
+                    <div className="text-xs text-muted">{l.phone} · {l.email || "no email"} · {l.confirmedSource || "source?"}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {form.leadId && <div className="text-xs text-good mt-2">Linked to {form.leadId} — {form.customerName || "?"}. Lead ID stays with this job.</div>}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label="Lead ID (auto-fills below)"><Input value={form.leadId} onChange={(e) => pullFromLead(e.target.value)} placeholder="L-2001" /></Field>
+          <Field label="Lead ID (from lead)"><Input value={form.leadId} onChange={(e) => set({ leadId: e.target.value })} placeholder="L-2001" /></Field>
           <Field label="Urable Job ID"><Input value={form.urableJobId} onChange={(e) => set({ urableJobId: e.target.value })} /></Field>
+          <Field label="Urable Job Link"><Input value={form.urableJobLink} onChange={(e) => set({ urableJobLink: e.target.value })} /></Field>
           <Field label="Date Completed"><Input type="date" value={form.dateCompleted} onChange={(e) => set({ dateCompleted: e.target.value })} /></Field>
           <Field label="Customer Name"><Input value={form.customerName} onChange={(e) => set({ customerName: e.target.value })} /></Field>
           <Field label="Confirmed Source (from lead)"><Input value={form.confirmedSource} onChange={(e) => set({ confirmedSource: e.target.value })} /></Field>
           <Field label="Assigned Sales Rep"><Select options={["", ...s.salesReps]} value={form.assignedSalesRep} onChange={(e) => set({ assignedSalesRep: e.target.value })} /></Field>
-          <Field label="Services"><Select options={s.services} value={form.services || s.services[0]} onChange={(e) => set({ services: e.target.value })} /></Field>
+          <Field label="Services"><Select options={form.services && !s.services.includes(form.services) ? [form.services, ...s.services] : s.services} value={form.services || s.services[0]} onChange={(e) => set({ services: e.target.value })} /></Field>
           <Field label="Category"><Input value={form.category} onChange={(e) => set({ category: e.target.value })} /></Field>
-          <Field label="Job Location / Unit"><Select options={["", ...(s.services ? ["Shop | 5306 S Bannock St, Littleton, CO 80120", "Unit 1 | 2023 Ford F-150", "Unit 2 | 2016 Ford Transit Connect"] : [])]} value={form.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
+          <Field label="Job Location / Unit"><Select options={["", ...CARE_UNITS]} value={form.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
           <Field label="Lead Tech"><Select options={["", ...s.technicians]} value={form.leadTech} onChange={(e) => set({ leadTech: e.target.value })} /></Field>
           <Field label="Helper Tech"><Select options={["", ...s.technicians]} value={form.helperTech} onChange={(e) => set({ helperTech: e.target.value })} /></Field>
           <Field label="Job Type"><Select options={JOB_TYPES as unknown as string[]} value={form.jobType} onChange={(e) => set({ jobType: e.target.value as Job["jobType"] })} /></Field>
@@ -127,7 +165,6 @@ export default function JobsPage() {
           <Field label="Payment Method"><Select options={PAYMENT_METHODS} value={form.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} /></Field>
           <Field label="Tech Pay Status"><Select options={PAY_STATUSES as unknown as string[]} value={form.techPayStatus} onChange={(e) => set({ techPayStatus: e.target.value as Job["techPayStatus"] })} /></Field>
           <Field label="Sales Commission Status"><Select options={COMMISSION_STATUSES as unknown as string[]} value={form.salesCommissionStatus} onChange={(e) => set({ salesCommissionStatus: e.target.value as Job["salesCommissionStatus"] })} /></Field>
-          <Field label="Urable Job Link"><Input value={form.urableJobLink} onChange={(e) => set({ urableJobLink: e.target.value })} /></Field>
           <Field label="Historical?"><Select options={["No", "Yes"]} value={form.historical ? "Yes" : "No"} onChange={(e) => set({ historical: e.target.value === "Yes" })} /></Field>
           <div className="sm:col-span-3"><Field label="Admin Notes"><Textarea rows={2} value={form.adminNotes} onChange={(e) => set({ adminNotes: e.target.value })} /></Field></div>
         </div>

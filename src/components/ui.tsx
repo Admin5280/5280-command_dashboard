@@ -120,6 +120,11 @@ export function WarnPill({ flags }: { flags: string[] }) {
   );
 }
 
+export function StatusPill({ label, tone }: { label: string; tone: "good" | "warn" | "danger" }) {
+  const cls = tone === "good" ? "bg-good/15 text-good" : tone === "danger" ? "bg-danger/15 text-danger" : "bg-gold/15 text-gold";
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cls}`}>{label}</span>;
+}
+
 export function LinkOut({ href, label = "open" }: { href: string; label?: string }) {
   if (!href) return <span className="text-muted">—</span>;
   return <a href={href} target="_blank" rel="noreferrer" className="text-accent hover:underline whitespace-nowrap">{label} ↗</a>;

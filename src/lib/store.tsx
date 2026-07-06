@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { AppData, CareMember, CarePerk, CareVisit, Job, Lead, MarketingSpend, PayRules } from "./types";
+import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, Job, Lead, MarketingSpend, PayRules, TechBasePayRule } from "./types";
 import { sampleData } from "./sampleData";
+import { careLeadFromJob } from "./careClub";
 import { uid } from "./format";
 
 const KEY = "5280-command-center:v1";
@@ -39,6 +40,14 @@ interface Store extends AppData {
   updatePerk: (p: CarePerk) => void;
   deletePerk: (id: string) => void;
 
+  addCareLead: (c: Omit<CareClubLead, "id">) => void;
+  updateCareLead: (c: CareClubLead) => void;
+  deleteCareLead: (id: string) => void;
+
+  addBasePay: (r: Omit<TechBasePayRule, "id">) => void;
+  updateBasePay: (r: TechBasePayRule) => void;
+  deleteBasePay: (id: string) => void;
+
   addSetting: (kind: SettingKind, value: string) => void;
   removeSetting: (kind: SettingKind, value: string) => void;
 
@@ -51,6 +60,33 @@ interface Store extends AppData {
 }
 
 const Ctx = createContext<Store | null>(null);
+
+function nextCareLeadId(list: CareClubLead[]): string {
+  const nums = list.map((c) => +(c.careLeadId.match(/CL-(\d+)/)?.[1] ?? 0));
+  return `CL-${Math.max(3000, ...nums) + 1}`;
+}
+
+/** When a job is completed, ensure a Care Club lead exists and move its original lead into the pipeline. */
+function completeJobEffects(d: AppData, job: Job): Partial<AppData> {
+  if (!job.dateCompleted) return {};
+  const patch: Partial<AppData> = {};
+  const exists = d.careClubLeads.some((cl) =>
+    cl.completedJobId === job.id ||
+    (job.leadId && cl.originalLeadId === job.leadId) ||
+    (job.urableJobId && cl.urableJobId === job.urableJobId));
+  if (!exists) {
+    const lead = d.leads.find((l) => l.leadId === job.leadId);
+    const careLeadId = nextCareLeadId(d.careClubLeads);
+    patch.careClubLeads = [{ ...careLeadFromJob(job, lead, careLeadId), id: uid() }, ...d.careClubLeads];
+  }
+  let changed = false;
+  const leads = d.leads.map((l) => {
+    if (l.leadId && l.leadId === job.leadId && l.status === "Booked") { changed = true; return { ...l, status: "Completed Job" as const }; }
+    return l;
+  });
+  if (changed) patch.leads = leads;
+  return patch;
+}
 
 function load(): AppData {
   if (typeof window === "undefined") return sampleData();
@@ -70,6 +106,8 @@ function load(): AppData {
       careMembers: parsed.careMembers ?? s.careMembers,
       careVisits: parsed.careVisits ?? s.careVisits,
       carePerks: parsed.carePerks ?? s.carePerks,
+      careClubLeads: parsed.careClubLeads ?? s.careClubLeads,
+      techBasePay: parsed.techBasePay ?? s.techBasePay,
       payRules: parsed.payRules ?? s.payRules,
       payRulesHistory: parsed.payRulesHistory ?? s.payRulesHistory,
     };
@@ -99,11 +137,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const patch = (p: Partial<AppData>) => setData((d) => ({ ...d, ...p }));
     const inRange = (iso: string) => (!from || iso >= from) && (!to || iso <= to);
 
-    const addTo = <K extends "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks">(k: K, row: AppData[K][number]) =>
+    type Coll = "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks" | "careClubLeads" | "techBasePay";
+    const addTo = <K extends Coll>(k: K, row: AppData[K][number]) =>
       setData((d) => ({ ...d, [k]: [row, ...d[k]] }));
-    const upd = <K extends "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks">(k: K, row: { id: string }) =>
+    const upd = <K extends Coll>(k: K, row: { id: string }) =>
       setData((d) => ({ ...d, [k]: (d[k] as { id: string }[]).map((r) => (r.id === row.id ? row : r)) as AppData[K] }));
-    const del = <K extends "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks">(k: K, id: string) =>
+    const del = <K extends Coll>(k: K, id: string) =>
       setData((d) => ({ ...d, [k]: (d[k] as { id: string }[]).filter((r) => r.id !== id) as AppData[K] }));
 
     return {
@@ -117,8 +156,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateLead: (l) => upd("leads", l),
       deleteLead: (id) => del("leads", id),
 
-      addJob: (j) => addTo("jobs", { ...j, id: uid() }),
-      updateJob: (j) => upd("jobs", j),
+      addJob: (j) => setData((d) => {
+        const job = { ...j, id: uid() };
+        return { ...d, jobs: [job, ...d.jobs], ...completeJobEffects(d, job) };
+      }),
+      updateJob: (j) => setData((d) => {
+        const jobs = d.jobs.map((r) => (r.id === j.id ? j : r));
+        return { ...d, jobs, ...completeJobEffects({ ...d, jobs }, j) };
+      }),
       deleteJob: (id) => del("jobs", id),
 
       addMarketing: (m) => addTo("marketing", { ...m, id: uid() }),
@@ -134,6 +179,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addPerk: (p) => addTo("carePerks", { ...p, id: uid() }),
       updatePerk: (p) => upd("carePerks", p),
       deletePerk: (id) => del("carePerks", id),
+
+      addCareLead: (c) => addTo("careClubLeads", { ...c, id: uid() }),
+      updateCareLead: (c) => upd("careClubLeads", c),
+      deleteCareLead: (id) => del("careClubLeads", id),
+
+      addBasePay: (r) => addTo("techBasePay", { ...r, id: uid() }),
+      updateBasePay: (r) => upd("techBasePay", r),
+      deleteBasePay: (id) => del("techBasePay", id),
 
       addSetting: (kind, value) => setData((d) =>
         d[kind].includes(value.trim()) || !value.trim() ? d : { ...d, [kind]: [...d[kind], value.trim()] }),
@@ -165,13 +218,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             sources: p.sources ?? s.sources, services: p.services ?? s.services,
             salesReps: p.salesReps ?? s.salesReps, technicians: p.technicians ?? s.technicians,
             careMembers: p.careMembers ?? [], careVisits: p.careVisits ?? [], carePerks: p.carePerks ?? [],
+            careClubLeads: p.careClubLeads ?? [], techBasePay: p.techBasePay ?? s.techBasePay,
             payRules: p.payRules ?? s.payRules, payRulesHistory: p.payRulesHistory ?? [],
           });
           return true;
         } catch { return false; }
       },
       resetSample: () => setData(sampleData()),
-      clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], careMembers: [], careVisits: [], carePerks: [] }),
+      clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
     };
   }, [data, ready, from, to]);
 

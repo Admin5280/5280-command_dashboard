@@ -31,9 +31,33 @@ export function sampleData(): AppData {
     careMembers: careSample(),
     careVisits: visitSample(),
     carePerks: perkSample(),
+    careClubLeads: careLeadSample(),
+    techBasePay: [
+      { id: "bp1", technicianName: "Anthony Kiepprien", basePayType: "Weekly Base", basePayAmount: 150, effectiveStart: "2026-01-01", effectiveEnd: "", active: true, notes: "" },
+      { id: "bp2", technicianName: "Jarvis Hutchings", basePayType: "None", basePayAmount: 0, effectiveStart: "", effectiveEnd: "", active: true, notes: "" },
+      { id: "bp3", technicianName: "Julien Jerome-Stewart", basePayType: "None", basePayAmount: 0, effectiveStart: "", effectiveEnd: "", active: true, notes: "" },
+      { id: "bp4", technicianName: "Justin David Smith JR", basePayType: "None", basePayAmount: 0, effectiveStart: "", effectiveEnd: "", active: true, notes: "" },
+    ],
     payRules: { ...DEFAULT_PAY_RULES, tech: DEFAULT_PAY_RULES.tech.map((r) => ({ ...r })), sales: { ...DEFAULT_PAY_RULES.sales } },
     payRulesHistory: [],
   };
+}
+
+function careLeadSample(): import("./types").CareClubLead[] {
+  const c = (o: Partial<import("./types").CareClubLead>): import("./types").CareClubLead => ({
+    id: "", careLeadId: "", originalLeadId: "", customerId: "", ghlContactId: "", ghlContactLink: "https://app.gohighlevel.com/contacts/example",
+    customerName: "", phone: "", email: "", vehicle: "", completedJobId: "", urableJobId: "", urableJobLink: "",
+    completedService: "", completedJobDate: "2026-06-10", completedJobRevenue: 0, confirmedSource: "", originalSalesRep: "",
+    assignedCareRep: "", assignedFounderTech: "", pipelineStatus: "New Care Club Lead", offerPresented: "Not Presented Yet",
+    recommendedTier: "Unknown", followUpDate: "", lastContactDate: "", closeDate: "", lostReason: "", notes: "",
+    createdAt: "2026-06-10", updatedAt: "2026-06-10", ...o,
+  });
+  return [
+    c({ id: "ccl1", careLeadId: "CL-3001", originalLeadId: "L-2001", customerId: "C-1001", completedJobId: "j1", urableJobId: "1471", urableJobLink: "https://app.urable.com/jobs/1471", customerName: "Marcus Webb", phone: "720-555-0142", email: "marcus@example.com", vehicle: "2021 Ford F-150", completedService: "Mobile Detail", completedJobDate: "2026-06-04", completedJobRevenue: 390, confirmedSource: "Google Ads", originalSalesRep: "Haley Brasil Soares", assignedCareRep: "Haley Brasil Soares", pipelineStatus: "Interested", offerPresented: "Founding 100 Charter Offer", recommendedTier: "Founding Monthly", followUpDate: "2026-07-08" }),
+    c({ id: "ccl2", careLeadId: "CL-3002", originalLeadId: "L-2003", customerId: "C-1003", completedJobId: "j2", urableJobId: "1478", urableJobLink: "https://app.urable.com/jobs/1478", customerName: "Dell Carter", phone: "720-555-0177", email: "dell@example.com", vehicle: "2022 BMW X5", completedService: "Paint Correction", completedJobDate: "2026-06-06", completedJobRevenue: 850, confirmedSource: "Google Business Profile", originalSalesRep: "Haley Brasil Soares", assignedCareRep: "Tony Gomez", pipelineStatus: "Offer Sent", offerPresented: "Founding 100 Charter Offer", recommendedTier: "Founding 6-Month PIF", followUpDate: "2026-07-09" }),
+    c({ id: "ccl3", careLeadId: "CL-3003", originalLeadId: "L-2005", customerId: "C-1005", completedJobId: "j3", urableJobId: "1488", urableJobLink: "https://app.urable.com/jobs/1488", customerName: "Owen Park", phone: "720-555-0188", email: "owen@example.com", vehicle: "2023 Toyota Tacoma", completedService: "Maintenance Detail", completedJobDate: "2026-06-10", completedJobRevenue: 230, confirmedSource: "Google LSA", originalSalesRep: "Haley Brasil Soares", pipelineStatus: "New Care Club Lead" }),
+    c({ id: "ccl4", careLeadId: "CL-3004", originalLeadId: "L-2008", customerId: "C-1008", completedJobId: "j4", urableJobId: "1494", urableJobLink: "https://app.urable.com/jobs/1494", customerName: "Amber Cole", phone: "303-555-0155", email: "amber@example.com", vehicle: "2021 Subaru Outback", completedService: "Mobile Detail", completedJobDate: "2026-06-13", completedJobRevenue: 340, confirmedSource: "Organic Search", originalSalesRep: "Haley Brasil Soares", assignedCareRep: "Jherico Megino", pipelineStatus: "Contacted", followUpDate: "2026-07-10" }),
+  ];
 }
 
 function cm(o: Partial<import("./types").CareMember>): import("./types").CareMember {
