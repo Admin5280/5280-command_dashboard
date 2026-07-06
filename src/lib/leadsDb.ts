@@ -98,40 +98,78 @@ export async function migrateLeads(sb: SupabaseClient, leads: Lead[]): Promise<n
   return data?.length ?? 0;
 }
 
+/* ---------------- payload normalization (accepts GHL camelCase OR native snake_case) ---------------- */
+function getPath(o: any, path: string): unknown {
+  return path.split(".").reduce((a: any, k) => (a == null ? a : a[k]), o);
+}
+function pick(p: any, keys: string[]): string {
+  for (const k of keys) {
+    const v = k.includes(".") ? getPath(p, k) : p?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
+}
+interface NormLead {
+  ghlContactId: string; ghlContactLink: string; fullName: string; firstName: string; lastName: string;
+  phone: string; email: string; source: string; serviceInterest: string; message: string;
+  tags: unknown; dateCreated: string; opportunityId: string; pipelineId: string; stageId: string;
+}
+function normalizePayload(p: any): NormLead {
+  const c = p?.contact ?? {}; // some GHL payloads nest fields under "contact"
+  return {
+    ghlContactId: pick(p, ["ghlContactId", "contact_id", "contactId"]) || pick(c, ["id", "contact_id"]),
+    ghlContactLink: pick(p, ["ghlContactLink", "contact_link"]),
+    fullName: pick(p, ["fullName", "full_name", "name", "contact_name"]) || pick(c, ["full_name", "name"]),
+    firstName: pick(p, ["firstName", "first_name"]) || pick(c, ["first_name"]),
+    lastName: pick(p, ["lastName", "last_name"]) || pick(c, ["last_name"]),
+    phone: pick(p, ["phone", "phone_number"]) || pick(c, ["phone"]),
+    email: pick(p, ["email", "email_address"]) || pick(c, ["email"]),
+    source: pick(p, ["source", "contact_source", "attributionSource.sessionSource", "contact.attributionSource.sessionSource"]),
+    serviceInterest: pick(p, ["serviceInterest", "service_interest", "type_of_detail"]),
+    message: pick(p, ["message", "notes", "last_message"]) || pick(c, ["notes"]),
+    tags: p?.tags ?? c?.tags,
+    dateCreated: pick(p, ["dateCreated", "date_created", "date_added"]),
+    opportunityId: pick(p, ["opportunityId", "opportunity_id"]),
+    pipelineId: pick(p, ["pipelineId", "pipeline_id"]),
+    stageId: pick(p, ["stageId", "stage_id"]),
+  };
+}
+
 /* ---------------- GHL upsert (dedupe by contact id → phone → email) ---------------- */
-async function findDuplicate(sb: SupabaseClient, p: GhlLeadPayload): Promise<any | null> {
+async function findDuplicate(sb: SupabaseClient, n: NormLead): Promise<any | null> {
   const tryBy = async (col: string, val?: string) => {
     if (!val) return null;
     const { data } = await sb.from("leads").select("*").eq(col, val).limit(1);
     return data && data[0] ? data[0] : null;
   };
-  return (await tryBy("ghl_contact_id", p.ghlContactId)) || (await tryBy("phone", p.phone)) || (await tryBy("email", p.email));
+  return (await tryBy("ghl_contact_id", n.ghlContactId)) || (await tryBy("phone", n.phone)) || (await tryBy("email", n.email));
 }
-function buildNotes(p: GhlLeadPayload): string {
-  const tags = Array.isArray(p.tags) ? p.tags.join(", ") : p.tags;
+function buildNotes(n: NormLead): string {
+  const tags = Array.isArray(n.tags) ? n.tags.join(", ") : (n.tags ? String(n.tags) : "");
   return [
-    p.message ? `Message: ${p.message}` : "",
+    n.message ? `Message: ${n.message}` : "",
     tags ? `Tags: ${tags}` : "",
-    p.opportunityId ? `Opportunity: ${p.opportunityId}` : "",
-    p.pipelineId ? `Pipeline: ${p.pipelineId}` : "",
-    p.stageId ? `Stage: ${p.stageId}` : "",
+    n.opportunityId ? `Opportunity: ${n.opportunityId}` : "",
+    n.pipelineId ? `Pipeline: ${n.pipelineId}` : "",
+    n.stageId ? `Stage: ${n.stageId}` : "",
   ].filter(Boolean).join(" | ");
 }
 
 export async function upsertFromGhl(sb: SupabaseClient, p: GhlLeadPayload): Promise<{ lead: Lead; duplicate: boolean }> {
-  const name = (p.fullName || `${p.firstName || ""} ${p.lastName || ""}`).trim();
-  const notes = buildNotes(p);
-  const dup = await findDuplicate(sb, p);
+  const n = normalizePayload(p);
+  const name = (n.fullName || `${n.firstName} ${n.lastName}`).trim();
+  const notes = buildNotes(n);
+  const dup = await findDuplicate(sb, n);
 
   if (dup) {
     const priorNote = dup.notes ? `${dup.notes} | ` : "";
     const patch = {
       customer_name: name || dup.customer_name,
-      phone: p.phone || dup.phone, email: p.email || dup.email,
-      ghl_contact_id: p.ghlContactId || dup.ghl_contact_id,
-      ghl_contact_link: p.ghlContactLink || dup.ghl_contact_link,
-      raw_source: p.source || dup.raw_source,
-      service_interest: p.serviceInterest || dup.service_interest,
+      phone: n.phone || dup.phone, email: n.email || dup.email,
+      ghl_contact_id: n.ghlContactId || dup.ghl_contact_id,
+      ghl_contact_link: n.ghlContactLink || dup.ghl_contact_link,
+      raw_source: n.source || dup.raw_source,
+      service_interest: n.serviceInterest || dup.service_interest,
       notes: `${priorNote}Updated from GHL webhook.${notes ? " " + notes : ""}`,
       updated_at: new Date().toISOString(),
     };
@@ -142,9 +180,9 @@ export async function upsertFromGhl(sb: SupabaseClient, p: GhlLeadPayload): Prom
 
   const row = {
     lead_id: await nextGhlLeadId(sb),
-    ghl_contact_id: p.ghlContactId || null, ghl_contact_link: p.ghlContactLink || "",
-    date_created: normDate(p.dateCreated) || denverDate(), customer_name: name, phone: p.phone || "", email: p.email || "",
-    raw_source: p.source || "", confirmed_source: "", source_review_status: "Needs Review", service_interest: p.serviceInterest || "",
+    ghl_contact_id: n.ghlContactId || null, ghl_contact_link: n.ghlContactLink || "",
+    date_created: normDate(n.dateCreated) || denverDate(), customer_name: name, phone: n.phone || "", email: n.email || "",
+    raw_source: n.source || "", confirmed_source: "", source_review_status: "Needs Review", service_interest: n.serviceInterest || "",
     claim_status: "Unclaimed", assigned_sales_rep: "", status: "New Lead", notes, origin: "ghl",
   };
   const { data, error } = await sb.from("leads").insert(row).select().single();
