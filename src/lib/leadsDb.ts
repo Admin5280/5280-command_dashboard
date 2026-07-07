@@ -135,6 +135,15 @@ function normalizePayload(p: any): NormLead {
   };
 }
 
+/* ---------------- GHL contact link (built server-side from the contact id) ---------------- */
+const GHL_APP_DOMAIN = process.env.GHL_APP_DOMAIN || "app.detailingaccelerator.com";
+const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || "nZsNyRvy08ILsIIeg4Dk";
+function buildContactLink(contactId: string, provided: string): string {
+  if (provided && /^https?:\/\//.test(provided)) return provided; // trust a full URL if GHL sent one
+  if (contactId) return `https://${GHL_APP_DOMAIN}/v2/location/${GHL_LOCATION_ID}/contacts/detail/${contactId}`;
+  return "";
+}
+
 /* ---------------- GHL upsert (dedupe by contact id → phone → email) ---------------- */
 async function findDuplicate(sb: SupabaseClient, n: NormLead): Promise<any | null> {
   const tryBy = async (col: string, val?: string) => {
@@ -167,7 +176,7 @@ export async function upsertFromGhl(sb: SupabaseClient, p: GhlLeadPayload): Prom
       customer_name: name || dup.customer_name,
       phone: n.phone || dup.phone, email: n.email || dup.email,
       ghl_contact_id: n.ghlContactId || dup.ghl_contact_id,
-      ghl_contact_link: n.ghlContactLink || dup.ghl_contact_link,
+      ghl_contact_link: buildContactLink(n.ghlContactId || dup.ghl_contact_id, n.ghlContactLink) || dup.ghl_contact_link,
       raw_source: n.source || dup.raw_source,
       service_interest: n.serviceInterest || dup.service_interest,
       notes: `${priorNote}Updated from GHL webhook.${notes ? " " + notes : ""}`,
@@ -180,7 +189,7 @@ export async function upsertFromGhl(sb: SupabaseClient, p: GhlLeadPayload): Prom
 
   const row = {
     lead_id: await nextGhlLeadId(sb),
-    ghl_contact_id: n.ghlContactId || null, ghl_contact_link: n.ghlContactLink || "",
+    ghl_contact_id: n.ghlContactId || null, ghl_contact_link: buildContactLink(n.ghlContactId, n.ghlContactLink),
     date_created: normDate(n.dateCreated) || denverDate(), customer_name: name, phone: n.phone || "", email: n.email || "",
     raw_source: n.source || "", confirmed_source: "", source_review_status: "Needs Review", service_interest: n.serviceInterest || "",
     claim_status: "Unclaimed", assigned_sales_rep: "", status: "New Lead", notes, origin: "ghl",
