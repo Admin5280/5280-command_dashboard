@@ -305,6 +305,7 @@ export interface AppData {
   services: string[];
   salesReps: string[];
   technicians: string[];
+  units: string[];               // Job Locations / Units (editable in Settings)
   careMembers: CareMember[];
   careVisits: CareVisit[];
   carePerks: CarePerk[];

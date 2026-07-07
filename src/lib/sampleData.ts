@@ -1,4 +1,4 @@
-import { AppData, DEFAULT_PAY_RULES } from "./types";
+import { AppData, CARE_UNITS, DEFAULT_PAY_RULES } from "./types";
 
 export const DEFAULT_SOURCES = [
   "Google Ads", "Google LSA", "Google Business Profile", "Meta Ads", "Instagram",
@@ -21,6 +21,7 @@ export function sampleData(): AppData {
     services: [...DEFAULT_SERVICES],
     salesReps: [...DEFAULT_SALES_REPS],
     technicians: [...DEFAULT_TECHS],
+    units: [...CARE_UNITS],
     leads: leadSample(),
     jobs: jobSample(),
     marketing: [

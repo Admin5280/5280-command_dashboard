@@ -8,7 +8,7 @@ import { uid } from "./format";
 
 const KEY = "5280-command-center:v1";
 
-type SettingKind = "sources" | "services" | "salesReps" | "technicians";
+type SettingKind = "sources" | "services" | "salesReps" | "technicians" | "units";
 
 interface Store extends AppData {
   ready: boolean;
@@ -109,6 +109,7 @@ function load(): AppData {
       services: parsed.services ?? s.services,
       salesReps: parsed.salesReps ?? s.salesReps,
       technicians: parsed.technicians ?? s.technicians,
+      units: parsed.units ?? s.units,
       careMembers: parsed.careMembers ?? s.careMembers,
       careVisits: parsed.careVisits ?? s.careVisits,
       carePerks: parsed.carePerks ?? s.carePerks,
@@ -262,7 +263,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           patch({
             leads: p.leads, jobs: p.jobs, marketing: p.marketing ?? [],
             sources: p.sources ?? s.sources, services: p.services ?? s.services,
-            salesReps: p.salesReps ?? s.salesReps, technicians: p.technicians ?? s.technicians,
+            salesReps: p.salesReps ?? s.salesReps, technicians: p.technicians ?? s.technicians, units: p.units ?? s.units,
             careMembers: p.careMembers ?? [], careVisits: p.careVisits ?? [], carePerks: p.carePerks ?? [],
             careClubLeads: p.careClubLeads ?? [], techBasePay: p.techBasePay ?? s.techBasePay,
             payRules: p.payRules ?? s.payRules, payRulesHistory: p.payRulesHistory ?? [],

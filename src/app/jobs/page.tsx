@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Job, Lead, JOB_TYPES, JOB_PAYMENT_STATUSES, PAYMENT_METHODS, PAY_STATUSES, COMMISSION_STATUSES,
-  CARE_UNITS, REVIEW_REQUEST_STATUSES, jobTotalRevenue } from "@/lib/types";
+  REVIEW_REQUEST_STATUSES, jobTotalRevenue } from "@/lib/types";
 import { jobHealth } from "@/lib/guardrails";
 import { serviceQuality } from "@/lib/quality";
 import { money, prettyDate, today } from "@/lib/format";
@@ -151,7 +151,7 @@ export default function JobsPage() {
           <Field label="Assigned Sales Rep"><Select options={["", ...s.salesReps]} value={form.assignedSalesRep} onChange={(e) => set({ assignedSalesRep: e.target.value })} /></Field>
           <Field label="Services"><Select options={form.services && !s.services.includes(form.services) ? [form.services, ...s.services] : s.services} value={form.services || s.services[0]} onChange={(e) => set({ services: e.target.value })} /></Field>
           <Field label="Category"><Input value={form.category} onChange={(e) => set({ category: e.target.value })} /></Field>
-          <Field label="Job Location / Unit"><Select options={["", ...CARE_UNITS]} value={form.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
+          <Field label="Job Location / Unit"><Select options={["", ...s.units]} value={form.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
           <Field label="Lead Tech"><Select options={["", ...s.technicians]} value={form.leadTech} onChange={(e) => set({ leadTech: e.target.value })} /></Field>
           <Field label="Helper Tech"><Select options={["", ...s.technicians]} value={form.helperTech} onChange={(e) => set({ helperTech: e.target.value })} /></Field>
           <Field label="Job Type"><Select options={JOB_TYPES as unknown as string[]} value={form.jobType} onChange={(e) => set({ jobType: e.target.value as Job["jobType"] })} /></Field>

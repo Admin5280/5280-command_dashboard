@@ -147,6 +147,7 @@ function RepDashboard({ rep }: { rep: string }) {
   ];
 
   const claimCol: Col<Lead> = { key: "claim", label: "", render: (l) => <Button variant="accent" onClick={() => claim(l)}>Claim</Button> };
+  const ghlCol: Col<Lead> = { key: "ghl", label: "GHL", render: (l) => <LinkOut href={l.ghlContactLink} /> };
 
   return (
     <>
@@ -173,10 +174,10 @@ function RepDashboard({ rep }: { rep: string }) {
         </div>
       </Section>
 
-      <Section title={`My Lead Inbox (${repLeads.length})`}><Table cols={[...leadCols, editCol]} rows={repLeads} empty="No leads assigned to you." /></Section>
-      <Section title={`My Unclaimed Leads (${unclaimedPool.length})`}><Table cols={[...leadCols.slice(0, 6), claimCol, editCol]} rows={unclaimedPool} empty="No unclaimed leads in the pool." /></Section>
-      <Section title={`My Follow-Ups (${followUps.length})`}><Table cols={[...leadCols, editCol]} rows={followUps} empty="No follow-ups due. ✓" /></Section>
-      <Section title={`My Booked Leads (${booked.length})`}><Table cols={[...leadCols.slice(0, 7), editCol]} rows={booked} empty="No booked leads yet." /></Section>
+      <Section title={`My Lead Inbox (${repLeads.length})`}><Table cols={[...leadCols, ghlCol, editCol]} rows={repLeads} empty="No leads assigned to you." /></Section>
+      <Section title={`My Unclaimed Leads (${unclaimedPool.length})`}><Table cols={[...leadCols.slice(0, 6), ghlCol, claimCol, editCol]} rows={unclaimedPool} empty="No unclaimed leads in the pool." /></Section>
+      <Section title={`My Follow-Ups (${followUps.length})`}><Table cols={[...leadCols, ghlCol, editCol]} rows={followUps} empty="No follow-ups due. ✓" /></Section>
+      <Section title={`My Booked Leads (${booked.length})`}><Table cols={[...leadCols.slice(0, 7), ghlCol, editCol]} rows={booked} empty="No booked leads yet." /></Section>
       <Section title={`My Completed Jobs (${repJobs.length})`}><Table cols={jobCols} rows={repJobs} empty="No completed jobs." /></Section>
       <Section title={`My Care Club Leads (${repCare.length})`}><Table cols={careCols} rows={repCare} empty="No Care Club leads assigned." /></Section>
 

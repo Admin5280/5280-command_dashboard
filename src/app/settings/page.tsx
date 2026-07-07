@@ -68,7 +68,7 @@ function CloudPanel() {
   );
 }
 
-type Kind = "sources" | "services" | "salesReps" | "technicians";
+type Kind = "sources" | "services" | "salesReps" | "technicians" | "units";
 
 function EditableList({ title, kind }: { title: string; kind: Kind }) {
   const s = useStore();
@@ -245,6 +245,7 @@ export default function SettingsPage() {
         <EditableList title="Services" kind="services" />
         <EditableList title="Sales Reps" kind="salesReps" />
         <EditableList title="Technicians" kind="technicians" />
+        <EditableList title="Job Locations / Units" kind="units" />
       </div>
 
       <Section title="GHL Webhook & Cloud Leads"><CloudPanel /></Section>
