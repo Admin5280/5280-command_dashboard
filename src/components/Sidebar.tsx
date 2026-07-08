@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "./AuthProvider";
 
 export const NAV = [
   { href: "/", label: "Overview", icon: "▤" },
@@ -20,19 +21,24 @@ export const NAV = [
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const path = usePathname();
+  const { profile, role, configured, canAccess, signOut } = useAuth();
+  const nav = NAV.filter((n) => canAccess(n.href));
+
   return (
     <aside className="w-60 shrink-0 bg-surface border-r border-line min-h-screen flex flex-col">
       <div className="px-5 py-5 border-b border-line">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white font-black text-sm">52</span>
+        <div className="flex items-center gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/Logo.svg" alt="5280" className="h-10 w-auto" />
           <div>
             <div className="text-sm font-bold text-ink leading-tight">COMMAND CENTER</div>
             <div className="text-[10px] text-muted">Mobile Detailing · Auto Studio</div>
           </div>
         </div>
       </div>
-      <nav className="flex-1 py-3">
-        {NAV.map((n) => {
+
+      <nav className="flex-1 py-3 overflow-y-auto">
+        {nav.map((n) => {
           const active = n.href === "/" ? path === "/" : path.startsWith(n.href);
           return (
             <Link key={n.href} href={n.href} onClick={onNavigate}
@@ -45,7 +51,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           );
         })}
       </nav>
-      <div className="px-5 py-3 text-[10px] text-muted border-t border-line">MVP · local data</div>
+
+      <div className="border-t border-line px-4 py-3">
+        {configured && profile ? (
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-ink truncate">{profile.name || profile.email}</div>
+              <div className="text-[10px] text-muted">{role}</div>
+            </div>
+            <button onClick={signOut} className="text-[11px] text-muted hover:text-danger border border-line rounded-lg px-2 py-1 shrink-0">Sign out</button>
+          </div>
+        ) : (
+          <div className="text-[10px] text-muted">MVP · local data</div>
+        )}
+      </div>
     </aside>
   );
 }

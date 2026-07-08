@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { useStore } from "@/lib/store";
 
@@ -20,18 +21,46 @@ export function DateFilter() {
   );
 }
 
+/** Shows Tony (and everyone) which data is live vs mock vs manual. */
+export function DataMode() {
+  const { leads, jobs, leadsRemote } = useStore();
+  const jobsMode = useMemo(() => {
+    if (!jobs.length) return { label: "No Jobs", tone: "neutral" as const };
+    const mock = jobs.some((j) => /^j\d+$/.test(j.id));
+    const manual = jobs.some((j) => !/^j\d+$/.test(j.id));
+    if (mock && manual) return { label: "Mixed Jobs", tone: "warn" as const };
+    if (mock) return { label: "Mock Jobs", tone: "danger" as const };
+    return { label: "Manual Jobs", tone: "good" as const };
+  }, [jobs]);
+
+  const pill = (label: string, tone: "good" | "warn" | "danger" | "blue" | "neutral") => {
+    const cls = { good: "bg-good/15 text-good", warn: "bg-gold/15 text-gold", danger: "bg-danger/15 text-danger", blue: "bg-accent/15 text-accent", neutral: "bg-white/10 text-muted" }[tone];
+    return <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${cls}`}>{label}</span>;
+  };
+
+  return (
+    <div className="hidden sm:flex items-center gap-1.5" title="Data mode: Leads are live in Supabase; other data is local/sample until migrated.">
+      <span className="text-[10px] uppercase tracking-wide text-muted">Data</span>
+      {pill(leadsRemote ? "Live Leads" : "Local Leads", leadsRemote ? "good" : "warn")}
+      {pill(jobsMode.label, jobsMode.tone)}
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { ready } = useStore();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  // login page renders bare (no sidebar / header)
+  if (pathname === "/login") return <>{children}</>;
 
   return (
     <div className="min-h-screen flex bg-base">
-      {/* desktop sidebar */}
       <div className="hidden md:block">
         <Sidebar />
       </div>
 
-      {/* mobile drawer */}
       {open && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
@@ -44,6 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="sticky top-0 z-30 bg-base/90 backdrop-blur border-b border-line px-4 py-2.5 flex items-center gap-3">
           <button className="md:hidden text-ink text-xl px-1" onClick={() => setOpen(true)} aria-label="Menu">☰</button>
+          <DataMode />
           <div className="ml-auto flex items-center gap-3">
             <span className="hidden sm:block text-[11px] uppercase tracking-wide text-muted">Date range</span>
             <DateFilter />

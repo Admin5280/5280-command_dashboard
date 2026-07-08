@@ -4,7 +4,125 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { BASE_PAY_TYPES, BasePayType, PayRules, TechBasePayRule } from "@/lib/types";
 import { prettyDate, today } from "@/lib/format";
-import { Button, Card, Field, Input, PageHeader, Section, Select, StatusPill } from "@/components/ui";
+import { ROLES } from "@/lib/permissions";
+import { useAuth } from "@/components/AuthProvider";
+import { Badge, Button, Card, Field, Input, Modal, PageHeader, Section, Select, StatusPill, Textarea } from "@/components/ui";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function UserManagement() {
+  const { can, configured } = useAuth();
+  const [users, setUsers] = useState<any[]>([]);
+  const [msg, setMsg] = useState("");
+  const [editing, setEditing] = useState<any | null>(null);
+  const blankNew = { name: "", email: "", phone: "", role: "Viewer", department: "", active: true, commissionPct: 6, tech_base_pay_type: "None", tech_base_pay_amount: 0, notes: "" };
+  const [nu, setNu] = useState<any>(blankNew);
+  const [adding, setAdding] = useState(false);
+
+  const load = () => fetch("/api/users").then((r) => r.json()).then((j) => setUsers(j.users || [])).catch(() => {});
+  useEffect(() => { if (configured && can("manageUsers")) load(); /* eslint-disable-next-line */ }, [configured]);
+
+  if (!configured) return <Card className="p-4 text-sm text-muted">User management activates once Supabase Auth is configured (env vars set + you&apos;re logged in).</Card>;
+  if (!can("manageUsers")) return null;
+
+  async function addUser() {
+    setMsg("Creating user…");
+    const res = await fetch("/api/users", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...nu, default_commission_rate: (nu.commissionPct || 0) / 100 }) });
+    const j = await res.json();
+    if (!res.ok) { setMsg(`✕ ${j.error}`); return; }
+    setMsg(`✓ Created ${nu.email}. Temporary password: ${j.tempPassword} — share it with them (they can reset it later).`);
+    setNu(blankNew); setAdding(false); load();
+  }
+  async function saveUser() {
+    if (!editing) return;
+    const res = await fetch(`/api/users/${editing.id}`, { method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...editing, default_commission_rate: (editing.commissionPct ?? (editing.default_commission_rate * 100)) / 100 }) });
+    const j = await res.json();
+    if (!res.ok) { setMsg(`✕ ${j.error}`); return; }
+    setEditing(null); setMsg("✓ Saved."); load();
+  }
+  async function deleteUser(u: any) {
+    if (!confirm(`Delete ${u.email}? This removes their login.`)) return;
+    const res = await fetch(`/api/users/${u.id}`, { method: "DELETE" });
+    const j = await res.json();
+    if (!res.ok) { setMsg(`✕ ${j.error}`); return; }
+    setMsg("✓ User deleted."); load();
+  }
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-ink">Users &amp; Roles</h3>
+        <Button variant="accent" onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "+ Invite User"}</Button>
+      </div>
+      {msg && <div className="mb-3 text-xs text-ink bg-base border border-line rounded-lg px-3 py-2">{msg}</div>}
+
+      {adding && (
+        <div className="bg-base border border-line rounded-lg p-3 mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <Field label="Name"><Input value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} /></Field>
+          <Field label="Email"><Input type="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} /></Field>
+          <Field label="Phone"><Input value={nu.phone} onChange={(e) => setNu({ ...nu, phone: e.target.value })} /></Field>
+          <Field label="Role"><Select options={ROLES as unknown as string[]} value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })} /></Field>
+          <Field label="Department"><Input value={nu.department} onChange={(e) => setNu({ ...nu, department: e.target.value })} /></Field>
+          <Field label="Active"><Select options={["Yes", "No"]} value={nu.active ? "Yes" : "No"} onChange={(e) => setNu({ ...nu, active: e.target.value === "Yes" })} /></Field>
+          <Field label="Commission %"><Input type="number" value={nu.commissionPct} onChange={(e) => setNu({ ...nu, commissionPct: +e.target.value })} /></Field>
+          <Field label="Tech Base Pay Type"><Select options={BASE_PAY_TYPES as unknown as string[]} value={nu.tech_base_pay_type} onChange={(e) => setNu({ ...nu, tech_base_pay_type: e.target.value })} /></Field>
+          <Field label="Tech Base Pay Amount"><Input type="number" value={nu.tech_base_pay_amount} onChange={(e) => setNu({ ...nu, tech_base_pay_amount: +e.target.value })} /></Field>
+          <div className="sm:col-span-3"><Field label="Notes"><Input value={nu.notes} onChange={(e) => setNu({ ...nu, notes: e.target.value })} /></Field></div>
+          <div className="sm:col-span-3"><Button variant="accent" onClick={addUser}>Create User</Button></div>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead><tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
+            {["Name", "Email", "Role", "Dept", "Active", "Commission", "Base Pay", ""].map((h) => <th key={h} className="text-left font-medium px-2 py-2">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-b border-line/60">
+                <td className="px-2 py-2 text-ink">{u.name || "—"}</td>
+                <td className="px-2 py-2 text-muted text-xs">{u.email}</td>
+                <td className="px-2 py-2"><Badge value={u.role} /></td>
+                <td className="px-2 py-2 text-muted">{u.department || "—"}</td>
+                <td className="px-2 py-2">{u.active ? <span className="text-good">Active</span> : <span className="text-danger">Disabled</span>}</td>
+                <td className="px-2 py-2 tabular-nums">{Math.round((u.default_commission_rate || 0) * 100)}%</td>
+                <td className="px-2 py-2 text-xs">{u.tech_base_pay_type === "None" ? "—" : `${u.tech_base_pay_type} $${u.tech_base_pay_amount}`}</td>
+                <td className="px-2 py-2 text-right"><Button variant="ghost" onClick={() => setEditing({ ...u, commissionPct: Math.round((u.default_commission_rate || 0) * 100) })}>Edit</Button></td>
+              </tr>
+            ))}
+            {!users.length && <tr><td colSpan={8} className="px-2 py-4 text-center text-muted">No users yet. Invite one above.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing ? `Edit ${editing.email}` : ""}>
+        {editing && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Name"><Input value={editing.name || ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></Field>
+              <Field label="Phone"><Input value={editing.phone || ""} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} /></Field>
+              <Field label="Role"><Select options={ROLES as unknown as string[]} value={editing.role} onChange={(e) => setEditing({ ...editing, role: e.target.value })} /></Field>
+              <Field label="Department"><Input value={editing.department || ""} onChange={(e) => setEditing({ ...editing, department: e.target.value })} /></Field>
+              <Field label="Active"><Select options={["Yes", "No"]} value={editing.active ? "Yes" : "No"} onChange={(e) => setEditing({ ...editing, active: e.target.value === "Yes" })} /></Field>
+              <Field label="Commission %"><Input type="number" value={editing.commissionPct} onChange={(e) => setEditing({ ...editing, commissionPct: +e.target.value })} /></Field>
+              <Field label="Tech Base Pay Type"><Select options={BASE_PAY_TYPES as unknown as string[]} value={editing.tech_base_pay_type || "None"} onChange={(e) => setEditing({ ...editing, tech_base_pay_type: e.target.value })} /></Field>
+              <Field label="Tech Base Pay Amount"><Input type="number" value={editing.tech_base_pay_amount || 0} onChange={(e) => setEditing({ ...editing, tech_base_pay_amount: +e.target.value })} /></Field>
+              <div className="sm:col-span-3"><Field label="Notes"><Textarea rows={2} value={editing.notes || ""} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></Field></div>
+            </div>
+            <div className="flex justify-between gap-2 mt-4">
+              <Button onClick={() => deleteUser(editing)}>Delete User</Button>
+              <div className="flex gap-2">
+                <Button onClick={() => setEditing(null)}>Cancel</Button>
+                <Button variant="accent" onClick={saveUser}>Save</Button>
+              </div>
+            </div>
+          </>
+        )}
+      </Modal>
+    </Card>
+  );
+}
 
 const WEBHOOK_URL = "https://5280-command-dashboard.vercel.app/api/webhooks/ghl/lead-created";
 interface WebhookEventLite { status: string; lead_id: string | null; duplicate: boolean; message: string; created_at: string; }
@@ -238,7 +356,9 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Manage dropdown lists, team, and data backups" />
+      <PageHeader title="Settings" subtitle="Manage users, dropdown lists, team, pay rules, and data backups" />
+
+      <Section title="User Management"><UserManagement /></Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <EditableList title="Lead Sources" kind="sources" />
