@@ -139,11 +139,13 @@ function jb(o: Partial<J>): J {
   const b: J = { id: "", leadId: "", urableJobId: "", urableJobLink: "", ghlContactLink: "", dateCompleted: "2026-06-05",
     customerName: "", phone: "", email: "", address: "", zip: "80120", category: "Detail", services: "Full Detail",
     unit: "Unit 1 | 2023 Ford F-150", assigneesRaw: "", leadTech: "Anthony Kiepprien", helperTech: "", assigneeCount: 1,
-    jobType: "Solo", subtotal: 0, upsellAddOns: "", techUpsellAmount: 0, discount: 0, tip: 0, addOnsValue: 0,
+    jobType: "Solo", jobStatus: "Completed", subtotal: 0, upsellAddOns: "", techUpsellAmount: 0, discount: 0, tip: 0, addOnsValue: 0,
     totalRevenue: 0, salesTotalRevenue: 0, amountPaid: 0, amountDue: 0, paymentStatus: "Fully Paid", paymentMethod: "Stripe",
     confirmedSource: "", assignedSalesRep: "Haley Brasil Soares", techPayStatus: "Pending Review",
     salesCommissionStatus: "Approved", reviewRequestStatus: "Not Sent", reviewReceived: false, rating: 0, reviewNegative: false,
-    callbackCount: 0, redoCount: 0, adminNotes: "", customerId: "", historical: false, createdAt: "2026-06-05", updatedAt: "2026-06-05", ...o };
+    callbackCount: 0, redoCount: 0, qualityStatus: "",
+    cancellationDate: "", cancellationReason: "", canceledBy: "", depositCollected: false, refundNeeded: false, cancellationNotes: "",
+    adminNotes: "", customerId: "", historical: false, createdAt: "2026-06-05", updatedAt: "2026-06-05", ...o };
   b.totalRevenue = b.subtotal + b.techUpsellAmount + b.tip + b.addOnsValue - b.discount;
   if (b.amountPaid === 0 && b.paymentStatus === "Fully Paid") b.amountPaid = b.totalRevenue;
   b.amountDue = b.totalRevenue - b.amountPaid;

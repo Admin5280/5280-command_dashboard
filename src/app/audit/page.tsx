@@ -37,6 +37,10 @@ export default function AuditPage() {
       { name: "Lead ID does not match a lead", test: (j) => !j.leadId || !leadIds.has(j.leadId) },
       { name: "Missing Tech Pay Status", test: (j) => !j.techPayStatus },
       { name: "Missing Sales Commission Status", test: (j) => !j.salesCommissionStatus },
+      { name: "Missing Job Status", test: (j) => !j.jobStatus },
+      { name: "Completed jobs missing review request", test: (j) => j.jobStatus === "Completed" && (!j.reviewRequestStatus || j.reviewRequestStatus === "Not Sent") },
+      { name: "Canceled jobs missing cancellation reason", test: (j) => j.jobStatus === "Canceled" && !j.cancellationReason },
+      { name: "Refunded jobs missing notes", test: (j) => j.jobStatus === "Refunded" && !j.cancellationNotes && !j.adminNotes },
     ];
     return defs.map((d) => {
       const hits = s.jobs.filter(d.test);

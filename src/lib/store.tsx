@@ -23,6 +23,9 @@ interface Store extends AppData {
   // leads are served from Supabase when the server is configured
   leadsRemote: boolean;
   migrateLeadsToCloud: () => Promise<{ ok: boolean; count?: number; error?: string }>;
+  // jobs are served from Supabase when the server is configured
+  jobsRemote: boolean;
+  migrateJobsToCloud: () => Promise<{ ok: boolean; found?: number; migrated?: number; skipped?: number; errors?: number; error?: string }>;
 
   addLead: (l: Omit<Lead, "id">) => void;
   updateLead: (l: Lead) => void;
@@ -130,6 +133,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [to, setTo] = useState("");
   const [currentRep, setCurrentRepState] = useState("");
   const [leadsRemote, setLeadsRemote] = useState(false);
+  const [jobsRemote, setJobsRemote] = useState(false);
 
   // hydrate from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
@@ -146,6 +150,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!cancelled && j && j.configured && Array.isArray(j.leads)) {
         setData((d) => ({ ...d, leads: j.leads }));
         setLeadsRemote(true);
+      }
+    }).catch(() => { /* stay on localStorage */ });
+    return () => { cancelled = true; };
+  }, [ready]);
+
+  // if Supabase is configured, jobs live there too — load them and switch to remote mode
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    fetch("/api/jobs").then((r) => r.json()).then((j) => {
+      if (!cancelled && j && j.configured && Array.isArray(j.jobs)) {
+        setData((d) => ({ ...d, jobs: j.jobs }));
+        setJobsRemote(true);
       }
     }).catch(() => { /* stay on localStorage */ });
     return () => { cancelled = true; };
@@ -190,6 +207,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           return { ok: true, count: j.count };
         } catch (e) { return { ok: false, error: String(e) }; }
       },
+      jobsRemote,
+      migrateJobsToCloud: async () => {
+        try {
+          const res = await fetch("/api/jobs/migrate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobs: data.jobs }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const refreshed = await fetch("/api/jobs").then((r) => r.json());
+          if (refreshed?.configured && Array.isArray(refreshed.jobs)) { setData((d) => ({ ...d, jobs: refreshed.jobs })); setJobsRemote(true); }
+          return { ok: true, found: j.found, migrated: j.migrated, skipped: j.skipped, errors: j.errors };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
 
       addLead: (l) => {
         if (leadsRemote) {
@@ -206,12 +234,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const job = { ...j, id: uid() };
         if (leadsRemote) { const eff = completeJobEffects(data, job); (eff.leads ?? []).forEach((nl) => { const b = data.leads.find((x) => x.id === nl.id); if (b && b.status !== nl.status) pushLeadRemote(nl); }); }
         setData((d) => ({ ...d, jobs: [job, ...d.jobs], ...completeJobEffects(d, job) }));
+        if (jobsRemote) fetch("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(j) })
+          .then((r) => r.json()).then(({ job: saved }) => { if (saved) setData((d) => ({ ...d, jobs: d.jobs.map((x) => (x.id === job.id ? saved : x)) })); }).catch(() => {});
       },
       updateJob: (j) => {
         if (leadsRemote) { const eff = completeJobEffects({ ...data, jobs: data.jobs.map((r) => (r.id === j.id ? j : r)) }, j); (eff.leads ?? []).forEach((nl) => { const b = data.leads.find((x) => x.id === nl.id); if (b && b.status !== nl.status) pushLeadRemote(nl); }); }
         setData((d) => { const jobs = d.jobs.map((r) => (r.id === j.id ? j : r)); return { ...d, jobs, ...completeJobEffects({ ...d, jobs }, j) }; });
+        if (jobsRemote) fetch(`/api/jobs/${j.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(j) }).catch(() => {});
       },
-      deleteJob: (id) => del("jobs", id),
+      deleteJob: (id) => { del("jobs", id); if (jobsRemote) fetch(`/api/jobs/${id}`, { method: "DELETE" }).catch(() => {}); },
 
       addMarketing: (m) => addTo("marketing", { ...m, id: uid() }),
       updateMarketing: (m) => upd("marketing", m),
@@ -274,7 +305,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       resetSample: () => setData(sampleData()),
       clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
     };
-  }, [data, ready, from, to, currentRep, leadsRemote]);
+  }, [data, ready, from, to, currentRep, leadsRemote, jobsRemote]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

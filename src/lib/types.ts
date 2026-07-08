@@ -16,6 +16,17 @@ export const CLAIM_STATUSES: ClaimStatus[] = ["Unclaimed", "Claimed", "Assigned"
 
 export type JobType = "Solo" | "Duo" | "Multi-Tech" | "Shop";
 export const JOB_TYPES: JobType[] = ["Solo", "Duo", "Multi-Tech", "Shop"];
+
+export type JobStatus = "Booked" | "In Progress" | "Completed" | "Canceled" | "Refunded" | "";
+export const JOB_STATUSES: JobStatus[] = ["Booked", "In Progress", "Completed", "Canceled", "Refunded"];
+
+export type CancellationReason =
+  | "Customer Canceled" | "Weather" | "Scheduling Issue" | "No Show" | "Price Objection"
+  | "Vehicle Not Available" | "Technician Issue" | "Other" | "";
+export const CANCELLATION_REASONS: CancellationReason[] = [
+  "Customer Canceled", "Weather", "Scheduling Issue", "No Show", "Price Objection",
+  "Vehicle Not Available", "Technician Issue", "Other",
+];
 export type JobPaymentStatus = "Fully Paid" | "Partially Paid" | "Unpaid" | "Refunded" | "";
 export const JOB_PAYMENT_STATUSES: JobPaymentStatus[] = ["Fully Paid", "Partially Paid", "Unpaid", "Refunded"];
 export const PAYMENT_METHODS = ["Stripe", "Cash", "Card", "Check", "Other"];
@@ -74,6 +85,7 @@ export interface Job {
   helperTech: string;
   assigneeCount: number;
   jobType: JobType;
+  jobStatus: JobStatus;
   subtotal: number;
   upsellAddOns: string;
   techUpsellAmount: number;
@@ -97,6 +109,14 @@ export interface Job {
   reviewNegative: boolean;
   callbackCount: number;
   redoCount: number;
+  qualityStatus: string;
+  // cancellation tracking
+  cancellationDate: string;
+  cancellationReason: CancellationReason;
+  canceledBy: string;
+  depositCollected: boolean;
+  refundNeeded: boolean;
+  cancellationNotes: string;
   adminNotes: string;
   customerId: string;
   historical: boolean;

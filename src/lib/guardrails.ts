@@ -27,6 +27,7 @@ export function jobIssues(j: Job, leads: Lead[]): JobIssue[] {
   const leadMatch = !!j.leadId && leads.some((l) => l.leadId === j.leadId);
   const out: JobIssue[] = [];
   if (!leadMatch) out.push({ label: "Needs Lead Match", tone: "danger" });
+  if (!j.jobStatus) out.push({ label: "Needs Job Status", tone: "danger" });
   if (!(j.totalRevenue > 0)) out.push({ label: "Needs Revenue", tone: "danger" });
   if (!j.paymentStatus) out.push({ label: "Needs Payment Status", tone: "danger" });
   if (!j.urableJobId) out.push({ label: "Needs Urable Job ID", tone: "warn" });
@@ -36,7 +37,7 @@ export function jobIssues(j: Job, leads: Lead[]): JobIssue[] {
   if (!j.assignedSalesRep) out.push({ label: "Needs Sales Rep", tone: "warn" });
   if (!j.customerName) out.push({ label: "Needs Customer", tone: "warn" });
   if (!j.confirmedSource) out.push({ label: "Needs Confirmed Source", tone: "warn" });
-  if (!j.dateCompleted) out.push({ label: "Needs Date Completed", tone: "warn" });
+  if (j.jobStatus === "Completed" && !j.dateCompleted) out.push({ label: "Needs Date Completed", tone: "warn" });
   if (!j.services) out.push({ label: "Needs Service", tone: "warn" });
   if (!j.jobType) out.push({ label: "Needs Job Type", tone: "warn" });
   return out;

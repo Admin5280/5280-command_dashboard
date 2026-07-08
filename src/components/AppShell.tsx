@@ -23,26 +23,36 @@ export function DateFilter() {
 
 /** Shows Tony (and everyone) which data is live vs mock vs manual. */
 export function DataMode() {
-  const { leads, jobs, leadsRemote } = useStore();
-  const jobsMode = useMemo(() => {
+  const { jobs, careMembers, leadsRemote, jobsRemote } = useStore();
+
+  const jobsPill = useMemo(() => {
+    if (jobsRemote) return { label: "Live Jobs", tone: "good" as const };
     if (!jobs.length) return { label: "No Jobs", tone: "neutral" as const };
     const mock = jobs.some((j) => /^j\d+$/.test(j.id));
     const manual = jobs.some((j) => !/^j\d+$/.test(j.id));
     if (mock && manual) return { label: "Mixed Jobs", tone: "warn" as const };
     if (mock) return { label: "Mock Jobs", tone: "danger" as const };
     return { label: "Manual Jobs", tone: "good" as const };
-  }, [jobs]);
+  }, [jobs, jobsRemote]);
 
-  const pill = (label: string, tone: "good" | "warn" | "danger" | "blue" | "neutral") => {
-    const cls = { good: "bg-good/15 text-good", warn: "bg-gold/15 text-gold", danger: "bg-danger/15 text-danger", blue: "bg-accent/15 text-accent", neutral: "bg-white/10 text-muted" }[tone];
+  const carePill = useMemo(() => {
+    if (!careMembers.length) return { label: "No Care Club", tone: "neutral" as const };
+    return careMembers.some((m) => /^cm\d+$/.test(m.id))
+      ? { label: "Mock Care Club", tone: "danger" as const }
+      : { label: "Manual Care Club", tone: "warn" as const };
+  }, [careMembers]);
+
+  const pill = (label: string, tone: "good" | "warn" | "danger" | "neutral") => {
+    const cls = { good: "bg-good/15 text-good", warn: "bg-gold/15 text-gold", danger: "bg-danger/15 text-danger", neutral: "bg-white/10 text-muted" }[tone];
     return <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${cls}`}>{label}</span>;
   };
 
   return (
-    <div className="hidden sm:flex items-center gap-1.5" title="Data mode: Leads are live in Supabase; other data is local/sample until migrated.">
+    <div className="hidden md:flex items-center gap-1.5" title="Live = Supabase cloud. Mock = sample data. Manual = you entered it locally.">
       <span className="text-[10px] uppercase tracking-wide text-muted">Data</span>
       {pill(leadsRemote ? "Live Leads" : "Local Leads", leadsRemote ? "good" : "warn")}
-      {pill(jobsMode.label, jobsMode.tone)}
+      {pill(jobsPill.label, jobsPill.tone)}
+      {pill(carePill.label, carePill.tone)}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { Job, Lead, MarketingSpend } from "./types";
 import { groupBy, safeDiv, sum } from "./format";
 
-/** A "completed" job = a production row with a completion date. */
-export const completed = (jobs: Job[]) => jobs.filter((j) => !!j.dateCompleted);
+/** A "completed" job = Job Status Completed (falls back to a completion date for legacy rows). */
+export const completed = (jobs: Job[]) => jobs.filter((j) => (j.jobStatus ? j.jobStatus === "Completed" : !!j.dateCompleted));
+export const canceled = (jobs: Job[]) => jobs.filter((j) => j.jobStatus === "Canceled");
 export const revenue = (j: Job) => j.totalRevenue || 0;
 
 /** A lead is "converted / won" once it books — this includes leads whose job has

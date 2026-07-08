@@ -144,6 +144,12 @@ function CloudPanel() {
     setMsg(r.ok ? `✓ Migrated ${r.count} lead(s) to Supabase.` : `✕ ${r.error}`);
     setBusy(false);
   }
+  async function migrateJobs() {
+    setBusy(true); setMsg("Migrating jobs to Supabase…");
+    const r = await s.migrateJobsToCloud();
+    setMsg(r.ok ? `✓ Jobs: ${r.migrated} migrated, ${r.skipped} skipped, ${r.errors} errors (of ${r.found} found).` : `✕ ${r.error}`);
+    setBusy(false);
+  }
 
   const last = events[0];
   const lastCreated = events.find((e) => e.status === "created");
@@ -158,9 +164,10 @@ function CloudPanel() {
         <StatusPill label={configured === null ? "checking…" : configured ? "Supabase connected" : "Supabase not configured"} tone={configured ? "good" : configured === null ? "neutral" : "warn"} />
       </div>
 
-      <div className="text-xs text-muted mb-3">
-        Leads storage: <b className={s.leadsRemote ? "text-good" : "text-gold"}>{s.leadsRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b>.
-        {!s.leadsRemote && " Add the Supabase env vars in Vercel, then reload."}
+      <div className="text-xs text-muted mb-3 space-y-0.5">
+        <div>Leads storage: <b className={s.leadsRemote ? "text-good" : "text-gold"}>{s.leadsRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b></div>
+        <div>Jobs storage: <b className={s.jobsRemote ? "text-good" : "text-gold"}>{s.jobsRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b></div>
+        {(!s.leadsRemote || !s.jobsRemote) && <div>Add the Supabase env vars in Vercel + run the table SQL, then reload.</div>}
       </div>
 
       <div className="bg-base border border-line rounded-lg p-3 mb-3">
@@ -179,7 +186,8 @@ function CloudPanel() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={refresh}>Refresh</Button>
-        <Button variant="accent" onClick={() => { if (!busy) migrate(); }}>{busy ? "Migrating…" : "Migrate current leads → Supabase"}</Button>
+        <Button variant="accent" onClick={() => { if (!busy) migrate(); }}>{busy ? "Working…" : "Migrate leads → Supabase"}</Button>
+        <Button variant="accent" onClick={() => { if (!busy) migrateJobs(); }}>{busy ? "Working…" : "Migrate jobs → Supabase"}</Button>
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
     </Card>

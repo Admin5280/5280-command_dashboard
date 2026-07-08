@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Job, Lead, JOB_TYPES, JOB_PAYMENT_STATUSES, PAYMENT_METHODS, PAY_STATUSES, COMMISSION_STATUSES,
+import { Job, Lead, JOB_TYPES, JOB_STATUSES, CANCELLATION_REASONS, JOB_PAYMENT_STATUSES, PAYMENT_METHODS, PAY_STATUSES, COMMISSION_STATUSES,
   REVIEW_REQUEST_STATUSES, jobTotalRevenue } from "@/lib/types";
 import { jobHealth } from "@/lib/guardrails";
 import { serviceQuality } from "@/lib/quality";
@@ -13,11 +13,12 @@ import { Badge, Button, Field, Input, LinkOut, Modal, PageHeader, Section, Selec
 const blank = (): Omit<Job, "id"> => ({
   leadId: "", urableJobId: "", urableJobLink: "", ghlContactLink: "", dateCompleted: today(),
   customerName: "", phone: "", email: "", address: "", zip: "", category: "", services: "",
-  unit: "", assigneesRaw: "", leadTech: "", helperTech: "", assigneeCount: 1, jobType: "Solo",
+  unit: "", assigneesRaw: "", leadTech: "", helperTech: "", assigneeCount: 1, jobType: "Solo", jobStatus: "Completed",
   subtotal: 0, upsellAddOns: "", techUpsellAmount: 0, discount: 0, tip: 0, addOnsValue: 0,
   totalRevenue: 0, salesTotalRevenue: 0, amountPaid: 0, amountDue: 0, paymentStatus: "Fully Paid", paymentMethod: "Stripe",
   confirmedSource: "", assignedSalesRep: "", techPayStatus: "Pending Review", salesCommissionStatus: "Pending Review",
-  reviewRequestStatus: "Not Sent", reviewReceived: false, rating: 0, reviewNegative: false, callbackCount: 0, redoCount: 0,
+  reviewRequestStatus: "Not Sent", reviewReceived: false, rating: 0, reviewNegative: false, callbackCount: 0, redoCount: 0, qualityStatus: "",
+  cancellationDate: "", cancellationReason: "", canceledBy: "", depositCollected: false, refundNeeded: false, cancellationNotes: "",
   adminNotes: "", customerId: "", historical: false, createdAt: today(), updatedAt: today(),
 });
 
@@ -155,6 +156,7 @@ export default function JobsPage() {
           <Field label="Lead Tech"><Select options={["", ...s.technicians]} value={form.leadTech} onChange={(e) => set({ leadTech: e.target.value })} /></Field>
           <Field label="Helper Tech"><Select options={["", ...s.technicians]} value={form.helperTech} onChange={(e) => set({ helperTech: e.target.value })} /></Field>
           <Field label="Job Type"><Select options={JOB_TYPES as unknown as string[]} value={form.jobType} onChange={(e) => set({ jobType: e.target.value as Job["jobType"] })} /></Field>
+          <Field label="Job Status"><Select options={JOB_STATUSES as unknown as string[]} value={form.jobStatus} onChange={(e) => set({ jobStatus: e.target.value as Job["jobStatus"] })} /></Field>
           <Field label="Subtotal"><Input type="number" value={form.subtotal} onChange={(e) => set({ subtotal: +e.target.value })} /></Field>
           <Field label="Technician Upsell $"><Input type="number" value={form.techUpsellAmount} onChange={(e) => set({ techUpsellAmount: +e.target.value })} /></Field>
           <Field label="Tip"><Input type="number" value={form.tip} onChange={(e) => set({ tip: +e.target.value })} /></Field>
@@ -187,6 +189,17 @@ export default function JobsPage() {
               </div>
             </Field>
           </div>
+          {(form.jobStatus === "Canceled" || form.jobStatus === "Refunded") && (
+            <>
+              <div className="sm:col-span-3 mt-1 text-xs uppercase tracking-wide text-danger">Cancellation / Refund</div>
+              <Field label="Cancellation Date"><Input type="date" value={form.cancellationDate} onChange={(e) => set({ cancellationDate: e.target.value })} /></Field>
+              <Field label="Cancellation Reason"><Select options={["", ...CANCELLATION_REASONS]} value={form.cancellationReason} onChange={(e) => set({ cancellationReason: e.target.value as Job["cancellationReason"] })} /></Field>
+              <Field label="Canceled By"><Input value={form.canceledBy} onChange={(e) => set({ canceledBy: e.target.value })} /></Field>
+              <Field label="Deposit Collected"><Select options={["No", "Yes"]} value={form.depositCollected ? "Yes" : "No"} onChange={(e) => set({ depositCollected: e.target.value === "Yes" })} /></Field>
+              <Field label="Refund Needed"><Select options={["No", "Yes"]} value={form.refundNeeded ? "Yes" : "No"} onChange={(e) => set({ refundNeeded: e.target.value === "Yes" })} /></Field>
+              <div className="sm:col-span-3"><Field label="Cancellation Notes"><Textarea rows={2} value={form.cancellationNotes} onChange={(e) => set({ cancellationNotes: e.target.value })} /></Field></div>
+            </>
+          )}
           <div className="sm:col-span-3"><Field label="Admin Notes / Resolution Notes"><Textarea rows={2} value={form.adminNotes} onChange={(e) => set({ adminNotes: e.target.value })} /></Field></div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
