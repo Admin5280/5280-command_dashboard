@@ -7,6 +7,7 @@ import { Job, Lead } from "@/lib/types";
 import { leadFlags, bookedNotInJobs, completedJobsMissingCareLead, dupCareLeadsBy, soldCareLeadsWithoutMember } from "@/lib/guardrails";
 import { careAudit } from "@/lib/careClub";
 import { serviceQuality } from "@/lib/quality";
+import { techOps } from "@/lib/operations";
 import { completed, marketingByChannel } from "@/lib/metrics";
 import { money, sum, today } from "@/lib/format";
 import { Card, Kpi, PageHeader, Section } from "@/components/ui";
@@ -40,7 +41,9 @@ export default function AuditPage() {
       { name: "Missing Job Status", test: (j) => !j.jobStatus },
       { name: "Completed jobs missing review request", test: (j) => j.jobStatus === "Completed" && (!j.reviewRequestStatus || j.reviewRequestStatus === "Not Sent") },
       { name: "Canceled jobs missing cancellation reason", test: (j) => j.jobStatus === "Canceled" && !j.cancellationReason },
+      { name: "Canceled jobs missing cancellation date", test: (j) => j.jobStatus === "Canceled" && !j.cancellationDate },
       { name: "Refunded jobs missing notes", test: (j) => j.jobStatus === "Refunded" && !j.cancellationNotes && !j.adminNotes },
+      { name: "Redo jobs missing resolution notes", test: (j) => j.services === "Redo Job" && !j.adminNotes },
     ];
     return defs.map((d) => {
       const hits = s.jobs.filter(d.test);
@@ -107,15 +110,17 @@ export default function AuditPage() {
     const cbJobs = s.jobs.filter((j) => j.services === "Callback");
     const cbNoUrable = cbJobs.filter((j) => !j.urableJobId);
     const cbNoNotes = cbJobs.filter((j) => !j.adminNotes);
+    const techCbHigh = techOps(s.jobs, s.technicians).filter((t) => t.callbackPct > 0.10);
     return [
-      { name: "Services with callback % above 10%", count: cbHigh.length, sample: cbHigh.map((r) => r.service).join(", "), href: "/quality" },
+      { name: "Services with callback % above 10%", count: cbHigh.length, sample: cbHigh.map((r) => r.service).join(", "), href: "/operations" },
+      { name: "Technicians with callback % above 10%", count: techCbHigh.length, sample: techCbHigh.map((t) => `${t.tech} (${(t.callbackPct * 100).toFixed(0)}%)`).join(", "), href: "/operations" },
       { name: "Services with review % below 30%", count: revLow.length, sample: revLow.map((r) => r.service).join(", "), href: "/quality" },
       { name: "Services with average rating below 4.5", count: ratingLow.length, sample: ratingLow.map((r) => `${r.service} (${r.avgRating.toFixed(1)})`).join(", "), href: "/quality" },
       { name: "Services with negative reviews", count: neg.length, sample: neg.map((r) => r.service).join(", "), href: "/quality" },
       { name: "Callback jobs missing Urable Job ID", count: cbNoUrable.length, sample: cbNoUrable.slice(0, 6).map((j) => j.customerName).join(", "), href: "/jobs" },
       { name: "Callback jobs missing resolution notes", count: cbNoNotes.length, sample: cbNoNotes.slice(0, 6).map((j) => j.customerName).join(", "), href: "/jobs" },
     ];
-  }, [s.jobs, s.from, s.to]);
+  }, [s.jobs, s.technicians, s.from, s.to]);
 
   const [failedWebhooks, setFailedWebhooks] = useState(0);
   useEffect(() => {
