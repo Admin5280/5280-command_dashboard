@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabaseBrowser, authConfigured } from "@/lib/supabaseBrowser";
+import { canAccessPage, landingPage } from "@/lib/permissions";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -15,8 +16,11 @@ export default function LoginPage() {
     if (!authConfigured()) { setErr("Login is not configured yet (missing Supabase env vars)."); setBusy(false); return; }
     const { error } = await supabaseBrowser().auth.signInWithPassword({ email: email.trim(), password });
     if (error) { setErr(error.message); setBusy(false); return; }
-    const next = new URLSearchParams(window.location.search).get("next") || "/";
-    window.location.href = next;
+    // route to the user's role-based landing page (honor ?next only if they can open it)
+    const me = await fetch("/api/me").then((r) => r.json()).catch(() => null);
+    const role = me?.profile?.role;
+    const next = new URLSearchParams(window.location.search).get("next");
+    window.location.href = next && canAccessPage(role, next) ? next : landingPage(role);
   }
 
   return (

@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
-import { Profile, Role, Capability, can as roleCan, canAccessPage } from "@/lib/permissions";
+import { usePathname, useRouter } from "next/navigation";
+import { Profile, Role, Capability, can as roleCan, canAccessPage, landingPage } from "@/lib/permissions";
 import { supabaseBrowser, authConfigured } from "@/lib/supabaseBrowser";
 import { useStore } from "@/lib/store";
 
@@ -20,6 +20,7 @@ const Ctx = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const store = useStore();
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
@@ -41,6 +42,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const role = profile?.role;
+  const landing = landingPage(role);
+
+  // the root "/" routes each role to their own dashboard (so no one lands on a page they can't open)
+  useEffect(() => {
+    if (configured && !loading && profile && profile.active && pathname === "/" && !canAccessPage(role, "/")) {
+      router.replace(landing);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configured, loading, profile, pathname, role]);
+
   const value: AuthState = {
     loading, configured, profile, role,
     can: (cap) => (configured ? roleCan(role, cap) : true),
@@ -65,18 +76,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
   // page-level role gate
   if (configured && !loading && profile && !canAccessPage(role, pathname)) {
-    return <Gate title="No access" body={`Your role (${role}) can't open this page.`} onSignOut={value.signOut} />;
+    // root routes by role (redirect in flight) — show a brief loader instead of "No access"
+    if (pathname === "/") {
+      return <Ctx.Provider value={value}><div className="min-h-screen flex items-center justify-center bg-base text-muted text-sm">Loading…</div></Ctx.Provider>;
+    }
+    return (
+      <Gate title="No access" body={`Your role (${role}) can't open this page.`} onSignOut={value.signOut}
+        onDashboard={() => router.replace(landing)} />
+    );
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-function Gate({ title, body, onSignOut }: { title: string; body: string; onSignOut: () => void }) {
+function Gate({ title, body, onSignOut, onDashboard }: { title: string; body: string; onSignOut: () => void; onDashboard?: () => void }) {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center text-center gap-3 p-8">
       <div className="text-lg font-semibold text-ink">{title}</div>
       <div className="text-sm text-muted max-w-sm">{body}</div>
-      <button onClick={onSignOut} className="mt-2 px-3 py-1.5 rounded-lg text-sm bg-surface2 border border-line text-ink hover:border-muted">Sign out</button>
+      <div className="flex items-center gap-2 mt-2">
+        {onDashboard && <button onClick={onDashboard} className="px-3 py-1.5 rounded-lg text-sm bg-accent text-white hover:bg-accent2">Go to My Dashboard</button>}
+        <button onClick={onSignOut} className="px-3 py-1.5 rounded-lg text-sm bg-surface2 border border-line text-ink hover:border-muted">Sign out</button>
+      </div>
     </div>
   );
 }

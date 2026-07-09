@@ -26,10 +26,19 @@ export const ROLE_PAGES: Record<Role, string[]> = {
   Manager: ["/", "/leads", "/jobs", "/care-club", "/marketing", "/sales", "/operations", "/quality", "/audit"],
   "Sales Rep": ["/sales", "/leads", "/care-club"],
   VA: ["/", "/leads", "/jobs", "/marketing", "/care-club", "/audit"],
-  Finance: ["/", "/finance", "/payroll", "/jobs"],
-  Technician: ["/jobs", "/quality"],
+  Finance: ["/finance", "/payroll", "/jobs", "/marketing", "/audit"],
+  Technician: ["/jobs", "/operations", "/quality"],
   Viewer: ALL,
 };
+
+/** Where each role goes after login / when they hit the root "/". */
+const LANDING: Record<Role, string> = {
+  Owner: "/", Admin: "/", Manager: "/", "Sales Rep": "/sales", VA: "/leads",
+  Finance: "/finance", Technician: "/jobs", Viewer: "/",
+};
+export function landingPage(role: Role | undefined): string {
+  return role ? (LANDING[role] ?? "/") : "/";
+}
 
 export function canAccessPage(role: Role | undefined, path: string): boolean {
   if (!role) return false;
