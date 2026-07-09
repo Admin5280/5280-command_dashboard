@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
@@ -21,7 +22,8 @@ export const NAV = [
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const path = usePathname();
-  const { profile, role, configured, canAccess, signOut } = useAuth();
+  const { profile, role, configured, canAccess, signOut, openChangePassword, openProfile } = useAuth();
+  const [menu, setMenu] = useState(false);
   const nav = NAV.filter((n) => canAccess(n.href));
 
   return (
@@ -52,15 +54,24 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
 
-      <div className="border-t border-line px-4 py-3">
+      <div className="border-t border-line px-4 py-3 relative">
         {configured && profile ? (
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-xs font-medium text-ink truncate">{profile.name || profile.email}</div>
-              <div className="text-[10px] text-muted">{role}</div>
-            </div>
-            <button onClick={signOut} className="text-[11px] text-muted hover:text-danger border border-line rounded-lg px-2 py-1 shrink-0">Sign out</button>
-          </div>
+          <>
+            <button onClick={() => setMenu((m) => !m)} className="w-full flex items-center justify-between gap-2 text-left hover:bg-surface2/40 rounded-lg px-2 py-1 -mx-2">
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-ink truncate">{profile.name || profile.email}</div>
+                <div className="text-[10px] text-muted">{role}</div>
+              </div>
+              <span className="text-muted text-xs">▾</span>
+            </button>
+            {menu && (
+              <div className="absolute bottom-16 left-4 right-4 bg-surface border border-line rounded-lg shadow-card py-1 z-50">
+                <button onClick={() => { setMenu(false); openProfile(); }} className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface2/60">My Profile</button>
+                <button onClick={() => { setMenu(false); openChangePassword(); }} className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface2/60">Change Password</button>
+                <button onClick={() => { setMenu(false); signOut(); }} className="w-full text-left px-3 py-2 text-sm text-danger hover:bg-surface2/60">Sign Out</button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-[10px] text-muted">MVP · local data</div>
         )}

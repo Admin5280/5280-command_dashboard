@@ -48,6 +48,13 @@ function UserManagement() {
     if (!res.ok) { setMsg(`✕ ${j.error}`); return; }
     setMsg("✓ User deleted."); load();
   }
+  async function resetUser(u: any) {
+    if (!confirm(`Reset ${u.email}'s password to a new temporary one?`)) return;
+    const res = await fetch(`/api/users/${u.id}/reset`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "temp" }) });
+    const j = await res.json();
+    if (!res.ok) { setMsg(`✕ ${j.error}`); return; }
+    setMsg(`✓ New temp password for ${u.email}: ${j.tempPassword} — share it; they can change it after logging in via Profile → Change Password.`);
+  }
 
   return (
     <Card className="p-4">
@@ -88,7 +95,10 @@ function UserManagement() {
                 <td className="px-2 py-2">{u.active ? <span className="text-good">Active</span> : <span className="text-danger">Disabled</span>}</td>
                 <td className="px-2 py-2 tabular-nums">{Math.round((u.default_commission_rate || 0) * 100)}%</td>
                 <td className="px-2 py-2 text-xs">{u.tech_base_pay_type === "None" ? "—" : `${u.tech_base_pay_type} $${u.tech_base_pay_amount}`}</td>
-                <td className="px-2 py-2 text-right"><Button variant="ghost" onClick={() => setEditing({ ...u, commissionPct: Math.round((u.default_commission_rate || 0) * 100) })}>Edit</Button></td>
+                <td className="px-2 py-2 text-right whitespace-nowrap">
+                  <Button variant="ghost" onClick={() => resetUser(u)}>Reset PW</Button>
+                  <Button variant="ghost" onClick={() => setEditing({ ...u, commissionPct: Math.round((u.default_commission_rate || 0) * 100) })}>Edit</Button>
+                </td>
               </tr>
             ))}
             {!users.length && <tr><td colSpan={8} className="px-2 py-4 text-center text-muted">No users yet. Invite one above.</td></tr>}

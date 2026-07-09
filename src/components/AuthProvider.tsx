@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Profile, Role, Capability, can as roleCan, canAccessPage, landingPage } from "@/lib/permissions";
 import { supabaseBrowser, authConfigured } from "@/lib/supabaseBrowser";
 import { useStore } from "@/lib/store";
+import { Button, Field, Input, Modal } from "@/components/ui";
 
 interface AuthState {
   loading: boolean;
@@ -14,6 +15,8 @@ interface AuthState {
   can: (cap: Capability) => boolean;
   canAccess: (path: string) => boolean;
   signOut: () => Promise<void>;
+  openChangePassword: () => void;
+  openProfile: () => void;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -25,6 +28,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (authConfigured()) { try { await supabaseBrowser().auth.signOut(); } catch { /* ignore */ } }
       window.location.href = "/login";
     },
+    openChangePassword: () => setPwdOpen(true),
+    openProfile: () => setProfileOpen(true),
   };
 
   // login page renders without the auth gate
@@ -86,7 +93,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} />
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} />
+    </Ctx.Provider>
+  );
+}
+
+function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setMsg(null);
+    if (pw.length < 8) { setMsg({ ok: false, text: "Password must be at least 8 characters." }); return; }
+    if (pw !== confirm) { setMsg({ ok: false, text: "Passwords do not match." }); return; }
+    setBusy(true);
+    const { error } = await supabaseBrowser().auth.updateUser({ password: pw });
+    setBusy(false);
+    if (error) { setMsg({ ok: false, text: error.message }); return; }
+    setMsg({ ok: true, text: "✓ Password updated." }); setPw(""); setConfirm("");
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Change Password">
+      <div className="space-y-3 max-w-sm">
+        <Field label="New Password"><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+        <Field label="Confirm New Password"><Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
+        {msg && <div className={`text-sm px-3 py-2 rounded-lg border ${msg.ok ? "text-good border-good/30 bg-good/10" : "text-danger border-danger/30 bg-danger/10"}`}>{msg.text}</div>}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Close</Button>
+          <Button variant="accent" onClick={() => { if (!busy) save(); }}>{busy ? "Saving…" : "Update Password"}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ProfileModal({ open, onClose, profile }: { open: boolean; onClose: () => void; profile: Profile | null }) {
+  return (
+    <Modal open={open} onClose={onClose} title="My Profile">
+      {profile ? (
+        <div className="space-y-2 text-sm max-w-sm">
+          {([["Name", profile.name], ["Email", profile.email], ["Phone", profile.phone], ["Role", profile.role], ["Department", profile.department]] as const).map(([l, v]) => (
+            <div key={l} className="flex justify-between border-b border-line/60 py-1.5"><span className="text-muted">{l}</span><span className="text-ink">{v || "—"}</span></div>
+          ))}
+          <p className="text-xs text-muted pt-2">To change your name, phone, or role, ask an Owner or Admin. You can change your own password anytime.</p>
+        </div>
+      ) : <div className="text-sm text-muted">Not signed in.</div>}
+    </Modal>
+  );
 }
 
 function Gate({ title, body, onSignOut, onDashboard }: { title: string; body: string; onSignOut: () => void; onDashboard?: () => void }) {

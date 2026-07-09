@@ -83,6 +83,38 @@ function RepDashboard({ rep }: { rep: string }) {
   const repJobs = useMemo(() => s.jobs.filter((j) => j.assignedSalesRep === rep && j.dateCompleted && s.inRange(j.dateCompleted)), [s.jobs, rep, s.from, s.to]);
   const repCare = useMemo(() => s.careClubLeads.filter((c) => c.assignedCareRep === rep), [s.careClubLeads, rep]);
 
+  // Lead Inbox filters
+  const [ibStatus, setIbStatus] = useState("All");
+  const [ibClaim, setIbClaim] = useState("All");
+  const [ibSource, setIbSource] = useState("All");
+  const [ibService, setIbService] = useState("All");
+  const [ibQuick, setIbQuick] = useState("All");
+  const [ibQ, setIbQ] = useState("");
+  const ibText = (l: Lead) => `${l.leadId} ${l.customerName} ${l.phone} ${l.email} ${l.serviceInterest} ${l.confirmedSource} ${l.status} ${l.notes}`.toLowerCase();
+  const ibQuickMatch = (l: Lead) => {
+    switch (ibQuick) {
+      case "New": return l.status === "New Lead";
+      case "Unclaimed": return l.claimStatus === "Unclaimed";
+      case "Contacted": return l.status === "Contacted";
+      case "Proposal Sent": return l.status === "Estimate Sent";
+      case "Follow-Up Needed": return l.status === "Follow-Up Needed";
+      case "Booked": return isConverted(l.status);
+      case "Lost": return l.status === "Lost";
+      case "No Response": return l.status === "No Response";
+      case "Needs Source Review": return !l.confirmedSource;
+      default: return true;
+    }
+  };
+  const inboxRows = useMemo(() => repLeads
+    .filter((l) => ibStatus === "All" || l.status === ibStatus)
+    .filter((l) => ibClaim === "All" || l.claimStatus === ibClaim)
+    .filter((l) => ibSource === "All" || l.confirmedSource === ibSource)
+    .filter((l) => ibService === "All" || l.serviceInterest === ibService)
+    .filter(ibQuickMatch)
+    .filter((l) => !ibQ || ibText(l).includes(ibQ.toLowerCase())),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [repLeads, ibStatus, ibClaim, ibSource, ibService, ibQuick, ibQ]);
+
   const cnt = (f: (l: Lead) => boolean) => repLeads.filter(f).length;
   const booked = repLeads.filter((l) => isConverted(l.status));
   const overdue = repLeads.filter((l) => l.nextFollowUp && l.nextFollowUp < t && openStatus(l.status));
@@ -174,7 +206,21 @@ function RepDashboard({ rep }: { rep: string }) {
         </div>
       </Section>
 
-      <Section title={`My Lead Inbox (${repLeads.length})`}><Table cols={[...leadCols, ghlCol, editCol]} rows={repLeads} empty="No leads assigned to you." /></Section>
+      <Section title={`My Lead Inbox (${inboxRows.length})`}>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {["All", "New", "Unclaimed", "Contacted", "Proposal Sent", "Follow-Up Needed", "Booked", "Lost", "No Response", "Needs Source Review"].map((qb) => (
+            <button key={qb} onClick={() => setIbQuick(qb)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${ibQuick === qb ? "bg-accent text-white border-transparent" : "bg-surface2 text-muted border-line hover:text-ink"}`}>{qb}</button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <Select options={["All", ...LEAD_STATUSES]} value={ibStatus} onChange={(e) => setIbStatus(e.target.value)} className="w-auto" />
+          <Select options={["All", ...CLAIM_STATUSES]} value={ibClaim} onChange={(e) => setIbClaim(e.target.value)} className="w-auto" />
+          <Select options={["All", ...LEAD_SOURCES]} value={ibSource} onChange={(e) => setIbSource(e.target.value)} className="w-auto" />
+          <Select options={["All", ...s.services]} value={ibService} onChange={(e) => setIbService(e.target.value)} className="w-auto" />
+          <Input placeholder="Search lead / customer / phone / email…" value={ibQ} onChange={(e) => setIbQ(e.target.value)} className="w-72" />
+        </div>
+        <Table cols={[...leadCols, ghlCol, editCol]} rows={inboxRows} empty="No leads match." />
+      </Section>
       <Section title={`My Unclaimed Leads (${unclaimedPool.length})`}><Table cols={[...leadCols.slice(0, 6), ghlCol, claimCol, editCol]} rows={unclaimedPool} empty="No unclaimed leads in the pool." /></Section>
       <Section title={`My Follow-Ups (${followUps.length})`}><Table cols={[...leadCols, ghlCol, editCol]} rows={followUps} empty="No follow-ups due. ✓" /></Section>
       <Section title={`My Booked Leads (${booked.length})`}><Table cols={[...leadCols.slice(0, 7), ghlCol, editCol]} rows={booked} empty="No booked leads yet." /></Section>
