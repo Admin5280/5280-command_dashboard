@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Expense, EXPENSE_CATEGORIES, FINANCE_PAYMENT_METHODS, FinanceSettings, PayrollPayment } from "@/lib/types";
+import { Expense, FinanceSettings, PayrollPayment } from "@/lib/types";
 import { financeKpis, paymentBreakdown, jobProcessingFee, jobNetReceived, FinanceInput } from "@/lib/finance";
 import { techPayroll, salesPayroll } from "@/lib/pay";
 import { careKpis } from "@/lib/careClub";
@@ -162,11 +162,11 @@ function ExpensesTab() {
               <Field label="Date"><Input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} /></Field>
               <Field label="Week Start"><Input type="date" value={form.weekStart} onChange={(e) => set({ weekStart: e.target.value })} /></Field>
               <Field label="Week End"><Input type="date" value={form.weekEnd} onChange={(e) => set({ weekEnd: e.target.value })} /></Field>
-              <Field label="Category"><Select options={EXPENSE_CATEGORIES} value={form.category} onChange={(e) => set({ category: e.target.value })} /></Field>
+              <Field label="Category"><Select options={s.optionsFor("expenseCategories")} value={form.category} onChange={(e) => set({ category: e.target.value })} /></Field>
               <Field label="Reason"><Input value={form.reason} onChange={(e) => set({ reason: e.target.value })} /></Field>
               <Field label="Vendor"><Input value={form.vendor} onChange={(e) => set({ vendor: e.target.value })} /></Field>
               <Field label="Amount"><Input type="number" value={form.amount} onChange={(e) => set({ amount: +e.target.value })} /></Field>
-              <Field label="Payment Method"><Select options={FINANCE_PAYMENT_METHODS} value={form.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} /></Field>
+              <Field label="Payment Method"><Select options={s.optionsFor("financePaymentMethods")} value={form.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} /></Field>
               <Field label="Account / Last 4"><Input value={form.accountLast4} onChange={(e) => set({ accountLast4: e.target.value })} /></Field>
               <Field label="Receipt Link"><Input value={form.receiptLink} onChange={(e) => set({ receiptLink: e.target.value })} /></Field>
               <Field label="Entered By"><Input value={form.enteredBy} onChange={(e) => set({ enteredBy: e.target.value })} /></Field>
@@ -348,7 +348,7 @@ function PayrollPaymentsLog() {
           <Field label="Period End"><Input type="date" value={form.periodEnd} onChange={(e) => set({ periodEnd: e.target.value })} /></Field>
           <Field label="Total Pay"><Input type="number" value={form.totalPay} onChange={(e) => set({ totalPay: +e.target.value })} /></Field>
           <Field label="Amount Paid"><Input type="number" value={form.amountPaid} onChange={(e) => set({ amountPaid: +e.target.value })} /></Field>
-          <Field label="Method"><Select options={FINANCE_PAYMENT_METHODS} value={form.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} /></Field>
+          <Field label="Method"><Select options={s.optionsFor("financePaymentMethods")} value={form.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} /></Field>
           <Field label="Paid Date"><Input type="date" value={form.paidDate} onChange={(e) => set({ paidDate: e.target.value })} /></Field>
           <Field label="Check #"><Input value={form.checkNumber} onChange={(e) => set({ checkNumber: e.target.value })} /></Field>
           <Field label="Zelle Ref"><Input value={form.zelleReference} onChange={(e) => set({ zelleReference: e.target.value })} /></Field>

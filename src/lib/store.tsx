@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, Expense, FinanceSettings, Job, Lead, MarketingSpend, PayRules, PayrollPayment, TechBasePayRule } from "./types";
+import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, DEFAULT_DROPDOWNS, Expense, FinanceSettings, Job, Lead, MarketingSpend, PayRules, PayrollPayment, TechBasePayRule } from "./types";
 import { sampleData } from "./sampleData";
 import { careLeadFromJob, defaultPerksForMember } from "./careClub";
 import { uid } from "./format";
@@ -48,6 +48,12 @@ interface Store extends AppData {
   deletePayrollPayment: (id: string) => void;
 
   setFinanceSettings: (s: FinanceSettings) => void;
+
+  // editable dropdown options (managed in Settings)
+  optionsFor: (category: string) => string[];
+  addDropdown: (category: string, value: string) => void;
+  removeDropdown: (category: string, value: string) => void;
+  moveDropdown: (category: string, value: string, dir: "up" | "down") => void;
 
   addMember: (m: Omit<CareMember, "id">) => void;
   updateMember: (m: CareMember) => void;
@@ -121,6 +127,7 @@ function load(): AppData {
       expenses: parsed.expenses ?? [],
       financeSettings: parsed.financeSettings ?? s.financeSettings,
       payrollPayments: parsed.payrollPayments ?? [],
+      dropdowns: parsed.dropdowns ?? {},
       sources: parsed.sources ?? s.sources,
       services: parsed.services ?? s.services,
       salesReps: parsed.salesReps ?? s.salesReps,
@@ -271,6 +278,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       setFinanceSettings: (fs) => setData((d) => ({ ...d, financeSettings: fs })),
 
+      optionsFor: (category) => data.dropdowns?.[category] ?? DEFAULT_DROPDOWNS[category] ?? [],
+      addDropdown: (category, value) => setData((d) => {
+        const cur = d.dropdowns[category] ?? DEFAULT_DROPDOWNS[category] ?? [];
+        const v = value.trim();
+        if (!v || cur.includes(v)) return d;
+        return { ...d, dropdowns: { ...d.dropdowns, [category]: [...cur, v] } };
+      }),
+      removeDropdown: (category, value) => setData((d) => {
+        const cur = d.dropdowns[category] ?? DEFAULT_DROPDOWNS[category] ?? [];
+        return { ...d, dropdowns: { ...d.dropdowns, [category]: cur.filter((x) => x !== value) } };
+      }),
+      moveDropdown: (category, value, dir) => setData((d) => {
+        const cur = [...(d.dropdowns[category] ?? DEFAULT_DROPDOWNS[category] ?? [])];
+        const i = cur.indexOf(value);
+        const j = dir === "up" ? i - 1 : i + 1;
+        if (i < 0 || j < 0 || j >= cur.length) return d;
+        [cur[i], cur[j]] = [cur[j], cur[i]];
+        return { ...d, dropdowns: { ...d.dropdowns, [category]: cur } };
+      }),
+
       addMember: (m) => setData((d) => {
         const member = { ...m, id: uid() };
         // auto-create default perks for the member's offer/plan (no duplicates)
@@ -322,7 +349,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           const s = sampleData();
           patch({
             leads: p.leads, jobs: p.jobs, marketing: p.marketing ?? [],
-            expenses: p.expenses ?? [], financeSettings: p.financeSettings ?? s.financeSettings, payrollPayments: p.payrollPayments ?? [],
+            expenses: p.expenses ?? [], financeSettings: p.financeSettings ?? s.financeSettings, payrollPayments: p.payrollPayments ?? [], dropdowns: p.dropdowns ?? {},
             sources: p.sources ?? s.sources, services: p.services ?? s.services,
             salesReps: p.salesReps ?? s.salesReps, technicians: p.technicians ?? s.technicians, units: p.units ?? s.units,
             careMembers: p.careMembers ?? [], careVisits: p.careVisits ?? [], carePerks: p.carePerks ?? [],

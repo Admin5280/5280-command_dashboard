@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { BASE_PAY_TYPES, BasePayType, PayRules, TechBasePayRule } from "@/lib/types";
+import { BASE_PAY_TYPES, BasePayType, MANAGED_DROPDOWNS, PayRules, TechBasePayRule } from "@/lib/types";
 import { prettyDate, today } from "@/lib/format";
 import { ROLES } from "@/lib/permissions";
 import { useAuth } from "@/components/AuthProvider";
@@ -358,6 +358,44 @@ function BasePayEditor() {
   );
 }
 
+function DropdownOptions() {
+  const s = useStore();
+  const { can } = useAuth();
+  const [cat, setCat] = useState(MANAGED_DROPDOWNS[0].key);
+  const [val, setVal] = useState("");
+  if (!can("manageSettings")) return null;
+  const opts = s.optionsFor(cat);
+  const label = MANAGED_DROPDOWNS.find((m) => m.key === cat)?.label ?? cat;
+  const add = () => { if (val.trim()) { s.addDropdown(cat, val); setVal(""); } };
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <h3 className="text-sm font-semibold text-ink">Dropdown Options</h3>
+        <Select options={MANAGED_DROPDOWNS.map((m) => m.label)} value={label}
+          onChange={(e) => { const m = MANAGED_DROPDOWNS.find((x) => x.label === e.target.value); if (m) { setCat(m.key); setVal(""); } }} className="w-auto" />
+      </div>
+      <div className="flex gap-2 mb-3">
+        <Input placeholder={`Add ${label} option…`} value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <Button variant="accent" onClick={add}>Add</Button>
+      </div>
+      <div className="space-y-1">
+        {opts.map((o, i) => (
+          <div key={o} className="flex items-center justify-between bg-base border border-line rounded-lg px-3 py-1.5">
+            <span className="text-sm text-ink">{o}</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => s.moveDropdown(cat, o, "up")} disabled={i === 0} className="text-muted hover:text-ink disabled:opacity-30 px-1">↑</button>
+              <button onClick={() => s.moveDropdown(cat, o, "down")} disabled={i === opts.length - 1} className="text-muted hover:text-ink disabled:opacity-30 px-1">↓</button>
+              <button onClick={() => { if (confirm(`Remove "${o}"? Records that already use it are unchanged.`)) s.removeDropdown(cat, o); }} className="text-muted hover:text-danger px-1">✕</button>
+            </div>
+          </div>
+        ))}
+        {!opts.length && <div className="text-sm text-muted">No options yet — add one above.</div>}
+      </div>
+      <p className="text-xs text-muted mt-3">Owner/Admin only. New options appear in the matching dropdowns across the app (Finance categories, payment methods, job categories, and more). Removing an option doesn&apos;t change records already using it.</p>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const s = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -385,6 +423,8 @@ export default function SettingsPage() {
         <EditableList title="Technicians" kind="technicians" />
         <EditableList title="Job Locations / Units" kind="units" />
       </div>
+
+      <Section title="Dropdown Options"><DropdownOptions /></Section>
 
       <Section title="GHL Webhook & Cloud Leads"><CloudPanel /></Section>
 

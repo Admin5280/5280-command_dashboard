@@ -27,6 +27,7 @@ export function sampleData(): AppData {
     expenses: [],
     financeSettings: { ...DEFAULT_FINANCE_SETTINGS },
     payrollPayments: [],
+    dropdowns: {},
     marketing: [
       { id: "m1", date: "2026-06-01", channel: "Google Ads", campaign: "Search - Detailing", spend: 1800, leads: 42, bookedJobs: 16, revenue: 7200, notes: "" },
       { id: "m2", date: "2026-06-01", channel: "Google LSA", campaign: "LSA Calls", spend: 950, leads: 30, bookedJobs: 12, revenue: 4800, notes: "" },

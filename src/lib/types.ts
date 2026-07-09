@@ -335,6 +335,36 @@ export const EXPENSE_CATEGORIES = [
 ];
 export const FINANCE_PAYMENT_METHODS = ["Stripe", "Card", "Cash", "Zelle", "Check", "Bank Transfer", "Other"];
 
+/* ---------------- Editable dropdown options (managed in Settings) ---------------- */
+export const DEFAULT_DROPDOWNS: Record<string, string[]> = {
+  expenseCategories: [...EXPENSE_CATEGORIES],
+  financePaymentMethods: [...FINANCE_PAYMENT_METHODS],
+  jobCategories: ["Interior Detail", "Exterior Detail", "Full Detail", "Ceramic Coating", "Paint Correction", "Window Tint", "Maintenance", "Other"],
+  paymentMethods: [...PAYMENT_METHODS],
+  cancellationReasons: [...CANCELLATION_REASONS],
+  visitServiceTypes: [...SERVICE_TYPES],
+  marketingCampaigns: [],
+  marketingOffers: [],
+  callbackReasons: ["Missed Spot", "Streaking / Residue", "Re-clean Requested", "Warranty", "Customer Request", "Other"],
+  qualityIssueTypes: ["Callback", "Complaint", "Redo", "Damage", "Other"],
+  reviewPlatforms: ["Google", "Yelp", "Facebook", "Other"],
+};
+
+/** Categories exposed in Settings → Dropdown Options (label + storage key). */
+export const MANAGED_DROPDOWNS: { key: string; label: string }[] = [
+  { key: "expenseCategories", label: "Finance Expense Categories" },
+  { key: "financePaymentMethods", label: "Finance Payment Methods" },
+  { key: "paymentMethods", label: "Job Payment Methods" },
+  { key: "jobCategories", label: "Job Categories" },
+  { key: "cancellationReasons", label: "Cancellation Reasons" },
+  { key: "visitServiceTypes", label: "Care Club Visit Service Types" },
+  { key: "marketingCampaigns", label: "Marketing Campaigns" },
+  { key: "marketingOffers", label: "Marketing Offers" },
+  { key: "callbackReasons", label: "Callback Reasons" },
+  { key: "qualityIssueTypes", label: "Quality Issue Types" },
+  { key: "reviewPlatforms", label: "Review Platforms" },
+];
+
 export interface Expense {
   id: string; date: string; weekStart: string; weekEnd: string; category: string; reason: string; vendor: string;
   amount: number; paymentMethod: string; accountLast4: string; receiptLink: string; notes: string; enteredBy: string;
@@ -365,6 +395,7 @@ export interface AppData {
   expenses: Expense[];
   financeSettings: FinanceSettings;
   payrollPayments: PayrollPayment[];
+  dropdowns: Record<string, string[]>;
   sources: string[];
   services: string[];
   salesReps: string[];

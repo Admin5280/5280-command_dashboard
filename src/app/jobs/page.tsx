@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Job, Lead, JOB_TYPES, JOB_STATUSES, CANCELLATION_REASONS, JOB_PAYMENT_STATUSES, PAYMENT_METHODS, PAY_STATUSES, COMMISSION_STATUSES,
+import { Job, Lead, JOB_TYPES, JOB_STATUSES, CANCELLATION_REASONS, JOB_PAYMENT_STATUSES, PAY_STATUSES, COMMISSION_STATUSES,
   REVIEW_REQUEST_STATUSES, jobTotalRevenue } from "@/lib/types";
 import { jobHealth } from "@/lib/guardrails";
 import { serviceQuality } from "@/lib/quality";
@@ -159,7 +159,7 @@ export default function JobsPage() {
           <Field label="Confirmed Source (from lead)"><Input value={form.confirmedSource} onChange={(e) => set({ confirmedSource: e.target.value })} /></Field>
           <Field label="Assigned Sales Rep"><Select options={["", ...s.salesReps]} value={form.assignedSalesRep} onChange={(e) => set({ assignedSalesRep: e.target.value })} /></Field>
           <Field label="Services"><Select options={form.services && !s.services.includes(form.services) ? [form.services, ...s.services] : s.services} value={form.services || s.services[0]} onChange={(e) => set({ services: e.target.value })} /></Field>
-          <Field label="Category"><Input value={form.category} onChange={(e) => set({ category: e.target.value })} /></Field>
+          <Field label="Category"><Select options={form.category && !s.optionsFor("jobCategories").includes(form.category) ? [form.category, ...s.optionsFor("jobCategories")] : ["", ...s.optionsFor("jobCategories")]} value={form.category} onChange={(e) => set({ category: e.target.value })} /></Field>
           <Field label="Job Location / Unit"><Select options={["", ...s.units]} value={form.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
           <Field label="Lead Tech"><Select options={["", ...s.technicians]} value={form.leadTech} onChange={(e) => set({ leadTech: e.target.value })} /></Field>
           <Field label="Helper Tech"><Select options={["", ...s.technicians]} value={form.helperTech} onChange={(e) => set({ helperTech: e.target.value })} /></Field>
@@ -175,7 +175,7 @@ export default function JobsPage() {
           <Field label="Amount Paid"><Input type="number" value={form.amountPaid} onChange={(e) => set({ amountPaid: +e.target.value })} /></Field>
           <Field label="Amount Due (auto)"><div className={`px-3 py-2 rounded-lg bg-base border border-line tabular-nums ${due > 0 ? "text-danger" : "text-muted"}`}>{money(due)}</div></Field>
           <Field label="Payment Status"><Select options={JOB_PAYMENT_STATUSES as unknown as string[]} value={form.paymentStatus} onChange={(e) => set({ paymentStatus: e.target.value as Job["paymentStatus"] })} /></Field>
-          <Field label="Payment Method"><Select options={PAYMENT_METHODS} value={form.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} /></Field>
+          <Field label="Payment Method"><Select options={s.optionsFor("paymentMethods")} value={form.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} /></Field>
           <Field label="Tech Pay Status"><Select options={PAY_STATUSES as unknown as string[]} value={form.techPayStatus} onChange={(e) => set({ techPayStatus: e.target.value as Job["techPayStatus"] })} /></Field>
           <Field label="Sales Commission Status"><Select options={COMMISSION_STATUSES as unknown as string[]} value={form.salesCommissionStatus} onChange={(e) => set({ salesCommissionStatus: e.target.value as Job["salesCommissionStatus"] })} /></Field>
           <Field label="Historical?"><Select options={["No", "Yes"]} value={form.historical ? "Yes" : "No"} onChange={(e) => set({ historical: e.target.value === "Yes" })} /></Field>
