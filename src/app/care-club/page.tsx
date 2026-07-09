@@ -3,13 +3,13 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import {
-  CareClubLead, CareMember, CARE_LEAD_STATUSES, CARE_OFFERS_PRESENTED, RECOMMENDED_TIERS, CARE_LOST_REASONS,
-  OFFER_TYPES, MEMBER_TIERS, PAYMENT_PLANS, MEMBER_STATUSES, CARE_PAYMENT_STATUSES, CARE_UNITS,
+  CareClubLead, CareMember, CarePerk, CARE_LEAD_STATUSES, CARE_OFFERS_PRESENTED, RECOMMENDED_TIERS, CARE_LOST_REASONS,
+  OFFER_TYPES, MEMBER_TIERS, PAYMENT_PLANS, MEMBER_STATUSES, CARE_PAYMENT_STATUSES, PERK_STATUSES, CARE_UNITS,
 } from "@/lib/types";
-import { careKpis, careLeadKpis, pricingFor, recommendedTierValue, memberDraftFromCareLead } from "@/lib/careClub";
+import { careKpis, careLeadKpis, pricingFor, recommendedTierValue, memberDraftFromCareLead, bookingStatus, daysOverdue } from "@/lib/careClub";
 import { money, prettyDate, today, groupBy, sum, pct } from "@/lib/format";
 import { toCSV, download } from "@/lib/csv";
-import { Badge, Button, Card, Field, Input, Kpi, LinkOut, Modal, PageHeader, Section, Select, Table, Textarea, Col } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Kpi, LinkOut, Modal, PageHeader, Section, Select, StatusPill, Table, Textarea, Col } from "@/components/ui";
 import { Bars, ChartCard, Donut, Gauge, TrendLine } from "@/components/charts";
 
 type Tab = "Dashboard" | "Care Club Leads" | "Active Members" | "Visits" | "Perks";
@@ -71,7 +71,7 @@ export default function CareClubPage() {
         ))}
       </div>
 
-      {tab === "Dashboard" && <DashboardTab k={k} clk={clk} />}
+      {tab === "Dashboard" && <DashboardTab k={k} clk={clk} onEdit={openEditMember} />}
       {tab === "Care Club Leads" && <LeadsTab onEditMember={openEditMember} onCreateMember={openMemberFromCareLead} />}
       {tab === "Active Members" && <MembersTab onEdit={openEditMember} />}
       {tab === "Visits" && <VisitsTab />}
@@ -79,6 +79,11 @@ export default function CareClubPage() {
 
       {/* member modal */}
       <Modal open={mOpen} onClose={() => setMOpen(false)} title={mEditing ? "Edit Member" : "Add Care Club Member"}>
+        {mEditing && (() => { const b = bookingStatus({ ...mForm, id: mEditing.id } as CareMember); return (
+          <div className="mb-3 flex items-center gap-2 text-xs">
+            <span className="text-muted uppercase tracking-wide">Booking status</span><StatusPill label={b.status} tone={b.tone} />
+          </div>
+        ); })()}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Member #"><Input type="number" value={mForm.memberNumber} onChange={(e) => setM({ memberNumber: e.target.value === "" ? "" : +e.target.value })} /></Field>
           <Field label="Customer Name"><Input value={mForm.customerName} onChange={(e) => setM({ customerName: e.target.value })} /></Field>
@@ -112,10 +117,13 @@ export default function CareClubPage() {
 }
 
 /* ================= Dashboard tab ================= */
-function DashboardTab({ k, clk }: { k: ReturnType<typeof careKpis>; clk: ReturnType<typeof careLeadKpis> }) {
+function DashboardTab({ k, clk, onEdit }: { k: ReturnType<typeof careKpis>; clk: ReturnType<typeof careLeadKpis>; onEdit: (m: CareMember) => void }) {
   const s = useStore();
+  const t = today();
   const members = s.careMembers;
   const cl = s.careClubLeads;
+  const needing = useMemo(() => members.filter((m) => m.memberStatus === "Active" && ["Needs Booking", "Overdue"].includes(bookingStatus(m).status)), [members]);
+  const upcoming = useMemo(() => members.filter((m) => m.memberStatus === "Active" && m.nextDetailDate && m.nextDetailDate >= t).sort((a, b) => a.nextDetailDate.localeCompare(b.nextDetailDate)), [members, t]);
 
   const byPlan = useMemo(() => Object.entries(groupBy(members.filter((m) => m.memberStatus === "Active"), (m) => m.paymentPlan)).map(([name, v]) => ({ name, value: v.length })), [members]);
   const byTier = useMemo(() => Object.entries(groupBy(members.filter((m) => m.memberStatus === "Active"), (m) => m.memberTier)).map(([name, v]) => ({ name, value: v.length })), [members]);
@@ -156,6 +164,21 @@ function DashboardTab({ k, clk }: { k: ReturnType<typeof careKpis>; clk: ReturnT
         <ChartCard title="Pipeline Value by Recommended Tier"><Bars data={valueByTier} xKey="name" yKey="value" money color="#F5C542" /></ChartCard>
         <ChartCard title="Leads by Completed Service"><Bars data={bySrv} xKey="name" yKey="value" color="#0A66B2" /></ChartCard>
       </div>
+
+      <Section title="Scheduling & Bookings">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+          <Kpi label="Active Members" value={String(k.active)} tone="blue" />
+          <Kpi label="Upcoming Bookings" value={String(k.upcomingBookings)} tone="good" />
+          <Kpi label="Members Needing Booking" value={String(k.needingBooking)} tone={k.needingBooking > 0 ? "warn" : "good"} />
+          <Kpi label="Overdue Details" value={String(k.overdueDetails)} tone={k.overdueDetails > 0 ? "danger" : "good"} />
+          <Kpi label="Past Due Members" value={String(k.pastDue)} tone={k.pastDue > 0 ? "danger" : "good"} />
+          <Kpi label="Visits This Month" value={String(k.visitsThisMonth)} tone="blue" />
+          <Kpi label="Visits This Year" value={String(k.visitsThisYear)} tone="blue" />
+        </div>
+      </Section>
+
+      <Section title={`Members Needing Next Detail (${needing.length})`}><BookingTable variant="needing" members={needing} onEdit={onEdit} /></Section>
+      <Section title={`Upcoming Care Club Bookings (${upcoming.length})`}><BookingTable variant="upcoming" members={upcoming} onEdit={onEdit} /></Section>
 
       <Section title="Membership Health">
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
@@ -317,19 +340,87 @@ function LeadsTab({ onEditMember, onCreateMember }: { onEditMember: (m: CareMemb
 }
 
 /* ================= Active Members tab ================= */
+/* ================= Booking / scheduling table (shared) ================= */
+function BookingTable({ variant, members, onEdit }: { variant: "upcoming" | "needing"; members: CareMember[]; onEdit: (m: CareMember) => void }) {
+  const s = useStore();
+  const t = today();
+  const setNext = (m: CareMember, date: string) => s.updateMember({ ...m, nextDetailDate: date, updatedAt: t });
+  const createVisit = (m: CareMember) => s.addVisit({ memberId: m.id, leadId: m.leadId, urableJobId: "", urableJobLink: "", ghlContactLink: m.ghlContactLink, customerName: m.customerName, vehicle: m.primaryVehicle, visitDate: m.nextDetailDate || t, serviceType: "Maintenance Detail", visitStatus: "Scheduled", tech: m.assignedFounderTech, unit: m.preferredUnit, bonusServiceUsed: "", addOnSold: "", addOnRevenue: 0, tip: 0, notes: "" });
+  const markCompleted = (m: CareMember) => s.updateMember({ ...m, lastDetailDate: t, nextDetailDate: "", visitsThisMonth: (m.visitsThisMonth || 0) + 1, visitsThisYear: (m.visitsThisYear || 0) + 1, updatedAt: t });
+
+  if (!members.length) return <Card className="p-6 text-center text-sm text-muted">None. ✓</Card>;
+  const dateInput = (m: CareMember) => <input type="date" value={m.nextDetailDate} onChange={(e) => setNext(m, e.target.value)} className="bg-base border border-line rounded px-2 py-1 text-xs text-ink" />;
+  const actions = (m: CareMember) => (
+    <div className="flex gap-1 justify-end whitespace-nowrap">
+      <Button variant="ghost" onClick={() => createVisit(m)}>+ Visit</Button>
+      <Button variant="ghost" onClick={() => markCompleted(m)} className="text-good">Done</Button>
+      <Button variant="ghost" onClick={() => onEdit(m)}>Edit</Button>
+    </div>
+  );
+  const heads = variant === "upcoming"
+    ? ["#", "Member", "Phone", "Vehicle", "Next Detail", "Founder Tech", "Unit", "Booking", "Last Detail", "Visits/mo", "GHL", ""]
+    : ["#", "Member", "Phone", "Plan", "Founder Tech", "Last Detail", "Next Detail", "Days Overdue", "Booking", ""];
+  return (
+    <Card className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead><tr className="border-b border-line text-xs uppercase tracking-wide text-muted">{heads.map((h, i) => <th key={i} className="text-left font-medium px-2 py-2 whitespace-nowrap">{h}</th>)}</tr></thead>
+        <tbody>
+          {members.map((m) => {
+            const b = bookingStatus(m);
+            return variant === "upcoming" ? (
+              <tr key={m.id} className="border-b border-line/60">
+                <td className="px-2 py-2 text-gold font-semibold">{m.memberNumber || "—"}</td>
+                <td className="px-2 py-2 text-ink">{m.customerName}</td>
+                <td className="px-2 py-2">{m.phone}</td>
+                <td className="px-2 py-2">{m.primaryVehicle}</td>
+                <td className="px-2 py-2">{dateInput(m)}</td>
+                <td className="px-2 py-2">{m.assignedFounderTech || "—"}</td>
+                <td className="px-2 py-2">{m.preferredUnit ? m.preferredUnit.split(" | ")[0] : "—"}</td>
+                <td className="px-2 py-2"><StatusPill label={b.status} tone={b.tone} /></td>
+                <td className="px-2 py-2 text-muted">{prettyDate(m.lastDetailDate) || "—"}</td>
+                <td className="px-2 py-2 tabular-nums">{m.visitsThisMonth}</td>
+                <td className="px-2 py-2"><LinkOut href={m.ghlContactLink} /></td>
+                <td className="px-2 py-2 text-right">{actions(m)}</td>
+              </tr>
+            ) : (
+              <tr key={m.id} className="border-b border-line/60">
+                <td className="px-2 py-2 text-gold font-semibold">{m.memberNumber || "—"}</td>
+                <td className="px-2 py-2 text-ink">{m.customerName}</td>
+                <td className="px-2 py-2">{m.phone}</td>
+                <td className="px-2 py-2">{m.paymentPlan}</td>
+                <td className="px-2 py-2">{m.assignedFounderTech || <span className="text-danger text-xs">⚠ none</span>}</td>
+                <td className="px-2 py-2 text-muted">{prettyDate(m.lastDetailDate) || "—"}</td>
+                <td className="px-2 py-2">{dateInput(m)}</td>
+                <td className="px-2 py-2 tabular-nums text-danger">{daysOverdue(m) || "—"}</td>
+                <td className="px-2 py-2"><StatusPill label={b.status} tone={b.tone} /></td>
+                <td className="px-2 py-2 text-right">{actions(m)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
 function MembersTab({ onEdit }: { onEdit: (m: CareMember) => void }) {
   const s = useStore();
   const t = today();
   const [fStatus, setFStatus] = useState("All");
   const [fOffer, setFOffer] = useState("All");
   const [fPlan, setFPlan] = useState("All");
+  const [fBooking, setFBooking] = useState("All");
   const [q, setQ] = useState("");
   const rows = useMemo(() => s.careMembers
     .filter((m) => fStatus === "All" || m.memberStatus === fStatus)
     .filter((m) => fOffer === "All" || m.offerType === fOffer)
     .filter((m) => fPlan === "All" || m.paymentPlan === fPlan)
+    .filter((m) => fBooking === "All" || bookingStatus(m).status === fBooking)
     .filter((m) => !q || `${m.customerName} ${m.phone} ${m.email} ${m.memberNumber} ${m.primaryVehicle}`.toLowerCase().includes(q.toLowerCase())),
-    [s.careMembers, fStatus, fOffer, fPlan, q]);
+    [s.careMembers, fStatus, fOffer, fPlan, fBooking, q]);
+
+  const needing = useMemo(() => s.careMembers.filter((m) => m.memberStatus === "Active" && ["Needs Booking", "Overdue"].includes(bookingStatus(m).status)), [s.careMembers]);
+  const upcoming = useMemo(() => s.careMembers.filter((m) => m.memberStatus === "Active" && m.nextDetailDate && m.nextDetailDate >= t).sort((a, b) => a.nextDetailDate.localeCompare(b.nextDetailDate)), [s.careMembers, t]);
 
   const cols: Col<CareMember>[] = [
     { key: "memberNumber", label: "#", render: (m) => <span className="text-gold font-semibold">{m.memberNumber || "—"}</span> },
@@ -337,6 +428,7 @@ function MembersTab({ onEdit }: { onEdit: (m: CareMember) => void }) {
     { key: "memberTier", label: "Tier" },
     { key: "paymentPlan", label: "Plan" },
     { key: "memberStatus", label: "Status", render: (m) => <Badge value={m.memberStatus} /> },
+    { key: "booking", label: "Booking", render: (m) => { const b = bookingStatus(m); return <StatusPill label={b.status} tone={b.tone} />; } },
     { key: "monthlyRate", label: "Monthly", render: (m) => <span className="tabular-nums">{m.paymentPlan === "Monthly" ? money(m.monthlyRate + m.secondVehicleRate) : "—"}</span> },
     { key: "amountPaid", label: "Paid", render: (m) => <span className="tabular-nums text-good">{money(m.amountPaid)}</span> },
     { key: "amountDue", label: "Due", render: (m) => <span className={`tabular-nums ${m.amountDue > 0 ? "text-danger" : "text-muted"}`}>{money(m.amountDue)}</span> },
@@ -352,17 +444,23 @@ function MembersTab({ onEdit }: { onEdit: (m: CareMember) => void }) {
   ];
 
   return (
-    <Section title={`Active Members (${rows.length})`} actions={
-      <Button onClick={() => download(`care-club-members-${t}.csv`, toCSV(rows as unknown as Record<string, unknown>[]))}>Export CSV</Button>
-    }>
-      <div className="flex flex-wrap gap-2 mb-3">
-        <Select options={["All", ...MEMBER_STATUSES]} value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="w-auto" />
-        <Select options={["All", ...OFFER_TYPES]} value={fOffer} onChange={(e) => setFOffer(e.target.value)} className="w-auto" />
-        <Select options={["All", ...PAYMENT_PLANS]} value={fPlan} onChange={(e) => setFPlan(e.target.value)} className="w-auto" />
-        <Input placeholder="Search member / phone / vehicle…" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
-      </div>
-      <Table cols={cols} rows={rows} empty="No members match." />
-    </Section>
+    <div>
+      <Section title={`Active Members (${rows.length})`} actions={
+        <Button onClick={() => download(`care-club-members-${t}.csv`, toCSV(rows as unknown as Record<string, unknown>[]))}>Export CSV</Button>
+      }>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <Select options={["All", ...MEMBER_STATUSES]} value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="w-auto" />
+          <Select options={["All", ...OFFER_TYPES]} value={fOffer} onChange={(e) => setFOffer(e.target.value)} className="w-auto" />
+          <Select options={["All", ...PAYMENT_PLANS]} value={fPlan} onChange={(e) => setFPlan(e.target.value)} className="w-auto" />
+          <Select options={["All", "Booked", "Needs Booking", "Overdue", "Paused", "Past Due", "Canceled", "No Detail Needed"]} value={fBooking} onChange={(e) => setFBooking(e.target.value)} className="w-auto" />
+          <Input placeholder="Search member / phone / vehicle…" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
+        </div>
+        <Table cols={cols} rows={rows} empty="No members match." />
+      </Section>
+
+      <Section title={`Members Needing Next Detail (${needing.length})`}><BookingTable variant="needing" members={needing} onEdit={onEdit} /></Section>
+      <Section title={`Upcoming Care Club Bookings (${upcoming.length})`}><BookingTable variant="upcoming" members={upcoming} onEdit={onEdit} /></Section>
+    </div>
   );
 }
 
@@ -386,14 +484,62 @@ function VisitsTab() {
 /* ================= Perks tab ================= */
 function PerksTab() {
   const s = useStore();
-  const cols: Col<(typeof s.carePerks)[number]>[] = [
-    { key: "customerName", label: "Member", render: (p) => <span className="text-ink">{p.customerName}</span> },
-    { key: "perkName", label: "Perk" },
-    { key: "perkValue", label: "Value", render: (p) => <span className="tabular-nums text-gold">{money(p.perkValue)}</span> },
+  const memberById = useMemo(() => Object.fromEntries(s.careMembers.map((m) => [m.id, m])), [s.careMembers]);
+  const [fStatus, setFStatus] = useState("All");
+  const [fOffer, setFOffer] = useState("All");
+  const [fPlan, setFPlan] = useState("All");
+  const [quick, setQuick] = useState("All");
+  const [q, setQ] = useState("");
+
+  const planOf = (p: CarePerk) => memberById[p.memberId]?.paymentPlan ?? "";
+  const quickMatch = (p: CarePerk) => {
+    switch (quick) {
+      case "Available": return p.status === "Available";
+      case "Scheduled": return p.status === "Scheduled";
+      case "Used": return p.status === "Used";
+      case "Expired": return p.status === "Expired";
+      case "PIF Ceramic": return /ceramic/i.test(p.perkName);
+      case "Founders 25 Credits": return /founders 25 credit/i.test(p.perkName);
+      default: return true;
+    }
+  };
+  const rows = useMemo(() => s.carePerks
+    .filter((p) => fStatus === "All" || p.status === fStatus)
+    .filter((p) => fOffer === "All" || p.offerType === fOffer)
+    .filter((p) => fPlan === "All" || planOf(p) === fPlan)
+    .filter(quickMatch)
+    .filter((p) => !q || `${p.customerName} ${p.perkName} ${p.urableJobId} ${p.notes}`.toLowerCase().includes(q.toLowerCase())),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.carePerks, memberById, fStatus, fOffer, fPlan, quick, q]);
+
+  const cols: Col<CarePerk>[] = [
+    { key: "perkName", label: "Perk", render: (p) => <span className="text-ink">{p.perkName}</span> },
+    { key: "customerName", label: "Member" },
+    { key: "offerType", label: "Offer", render: (p) => <span className="text-xs">{p.offerType.replace(" Charter Offer", "")}</span> },
+    { key: "plan", label: "Plan", render: (p) => <span className="text-xs text-muted">{planOf(p) || "—"}</span> },
+    { key: "perkValue", label: "Value", render: (p) => <span className="tabular-nums text-gold">{p.perkValue ? money(p.perkValue) : "—"}</span> },
+    { key: "eligibleDate", label: "Eligible", render: (p) => <span className="text-muted">{prettyDate(p.eligibleDate) || "—"}</span> },
+    { key: "usedDate", label: "Used", render: (p) => <span className="text-muted">{prettyDate(p.usedDate) || "—"}</span> },
     { key: "status", label: "Status", render: (p) => <Badge value={p.status} /> },
-    { key: "eligibleDate", label: "Eligible", render: (p) => <span className="text-muted">{prettyDate(p.eligibleDate)}</span> },
-    { key: "usedDate", label: "Used", render: (p) => <span className="text-muted">{prettyDate(p.usedDate)}</span> },
-    { key: "urable", label: "Urable", render: (p) => <LinkOut href={p.urableJobLink} /> },
+    { key: "urableJobId", label: "Urable ID", render: (p) => <span className="font-mono text-xs">{p.urableJobId || "—"}</span> },
+    { key: "urable", label: "Link", render: (p) => <LinkOut href={p.urableJobLink} /> },
+    { key: "notes", label: "Notes", render: (p) => <span className="text-muted text-xs">{p.notes || "—"}</span> },
   ];
-  return <Section title={`Perks (${s.carePerks.length})`}><Table cols={cols} rows={s.carePerks} empty="No perks logged." /></Section>;
+
+  return (
+    <Section title={`Perks (${rows.length})`} actions={<Button onClick={() => download(`care-club-perks-${today()}.csv`, toCSV(rows as unknown as Record<string, unknown>[]))}>Export CSV</Button>}>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {["All", "Available", "Scheduled", "Used", "Expired", "PIF Ceramic", "Founders 25 Credits"].map((qb) => (
+          <button key={qb} onClick={() => setQuick(qb)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${quick === qb ? "bg-accent text-white border-transparent" : "bg-surface2 text-muted border-line hover:text-ink"}`}>{qb === "PIF Ceramic" ? "PIF Ceramic Bonuses" : qb}</button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        <Select options={["All", ...PERK_STATUSES]} value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="w-auto" />
+        <Select options={["All", ...OFFER_TYPES]} value={fOffer} onChange={(e) => setFOffer(e.target.value)} className="w-auto" />
+        <Select options={["All", ...PAYMENT_PLANS]} value={fPlan} onChange={(e) => setFPlan(e.target.value)} className="w-auto" />
+        <Input placeholder="Search perk / member / Urable…" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
+      </div>
+      <Table cols={cols} rows={rows} empty="No perks match." />
+    </Section>
+  );
 }

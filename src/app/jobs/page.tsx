@@ -34,14 +34,19 @@ export default function JobsPage() {
   const [fType, setFType] = useState("All");
   const [fPay, setFPay] = useState("All");
   const [fHealth, setFHealth] = useState("All");
+  const [q, setQ] = useState("");
+
+  const jobSearch = (j: Job) =>
+    `${j.leadId} ${j.urableJobId} ${j.customerName} ${j.phone} ${j.email} ${j.services} ${j.leadTech} ${j.helperTech} ${j.assignedSalesRep} ${j.confirmedSource} ${j.unit} ${j.paymentStatus} ${j.jobStatus} ${j.adminNotes}`.toLowerCase();
 
   const rows = useMemo(() => s.jobs
     .filter((j) => s.inRange(j.dateCompleted))
     .filter((j) => fTech === "All" || j.leadTech === fTech || j.helperTech === fTech)
     .filter((j) => fType === "All" || j.jobType === fType)
     .filter((j) => fPay === "All" || j.paymentStatus === fPay)
-    .filter((j) => fHealth === "All" || (fHealth === "Complete" ? jobHealth(j, s.leads).status === "Complete" : jobHealth(j, s.leads).status !== "Complete")),
-    [s.jobs, s.leads, s.from, s.to, fTech, fType, fPay, fHealth]);
+    .filter((j) => fHealth === "All" || (fHealth === "Complete" ? jobHealth(j, s.leads).status === "Complete" : jobHealth(j, s.leads).status !== "Complete"))
+    .filter((j) => !q || jobSearch(j).includes(q.toLowerCase())),
+    [s.jobs, s.leads, s.from, s.to, fTech, fType, fPay, fHealth, q]);
 
   const total = jobTotalRevenue(form);
   const due = total - (form.amountPaid || 0);
@@ -116,6 +121,7 @@ export default function JobsPage() {
           <Select options={["All", ...JOB_TYPES]} value={fType} onChange={(e) => setFType(e.target.value)} className="w-auto" />
           <Select options={["All", ...JOB_PAYMENT_STATUSES]} value={fPay} onChange={(e) => setFPay(e.target.value)} className="w-auto" />
           <Select options={["All", "Complete", "Needs Review"]} value={fHealth} onChange={(e) => setFHealth(e.target.value)} className="w-auto" />
+          <Input placeholder="Search Lead/Urable ID, customer, tech, service…" value={q} onChange={(e) => setQ(e.target.value)} className="w-72" />
         </div>
         <Table cols={cols} rows={rows} empty="No jobs match." />
       </Section>

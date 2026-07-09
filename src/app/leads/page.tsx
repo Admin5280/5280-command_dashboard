@@ -42,7 +42,7 @@ export default function LeadsPage() {
   const careLeadIds = useMemo(() => new Set(s.careClubLeads.map((c) => c.originalLeadId).filter(Boolean)), [s.careClubLeads]);
 
   const searchText = (l: Lead) =>
-    `${l.leadId} ${l.customerName} ${l.phone} ${l.email} ${l.confirmedSource} ${l.serviceInterest} ${l.assignedSalesRep} ${l.status} ${l.notes}`.toLowerCase();
+    `${l.leadId} ${l.customerName} ${l.phone} ${l.email} ${l.ghlContactId} ${l.confirmedSource} ${l.serviceInterest} ${l.assignedSalesRep} ${l.status} ${l.notes}`.toLowerCase();
 
   const openStatus = (st: string) => !["Booked", "Completed Job", "Care Club Sold", "Lost"].includes(st);
   const quickMatch = (l: Lead) => {

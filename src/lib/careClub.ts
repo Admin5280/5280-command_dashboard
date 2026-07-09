@@ -52,10 +52,29 @@ const isFounding = (m: CareMember) => m.offerType === "Founding 100 Charter Offe
 const inRange = (iso: string, from: string, to: string) => !!iso && (!from || iso >= from) && (!to || iso <= to);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86400000);
 
+/** Booking status for an active member (scheduling health). */
+export function bookingStatus(m: CareMember): { status: string; tone: "good" | "warn" | "danger" | "neutral" } {
+  const t = today();
+  if (m.memberStatus === "Canceled") return { status: "Canceled", tone: "neutral" };
+  if (m.paymentStatus === "Past Due" || m.memberStatus === "Past Due") return { status: "Past Due", tone: "danger" };
+  if (m.memberStatus === "Paused") return { status: "Paused", tone: "neutral" };
+  if (m.memberStatus !== "Active") return { status: "No Detail Needed", tone: "neutral" };
+  if (!m.nextDetailDate) return { status: "Needs Booking", tone: "warn" };
+  if (m.nextDetailDate < t) return { status: "Overdue", tone: "danger" };
+  return { status: "Booked", tone: "good" };
+}
+export const daysOverdue = (m: CareMember): number => {
+  if (!m.nextDetailDate) return 0;
+  const t = today();
+  if (m.nextDetailDate >= t) return 0;
+  return Math.round((new Date(t + "T00:00:00").getTime() - new Date(m.nextDetailDate + "T00:00:00").getTime()) / 86400000);
+};
+
 export interface CareKpis {
   active: number; foundingFilled: number; foundingRemaining: number; founders25Filled: number; founders25Remaining: number;
   standard: number; monthly: number; pif: number; mrr: number; arr: number; cashCollected: number; amountDue: number;
-  avgRevPerMember: number; visitsThisMonth: number; pastDue: number; renewalsDue: number; overdueDetails: number;
+  avgRevPerMember: number; visitsThisMonth: number; visitsThisYear: number; pastDue: number; renewalsDue: number;
+  overdueDetails: number; upcomingBookings: number; needingBooking: number;
 }
 
 export function careKpis(members: CareMember[], from: string, to: string): CareKpis {
@@ -78,10 +97,33 @@ export function careKpis(members: CareMember[], from: string, to: string): CareK
     amountDue: sum(members, (m) => m.amountDue),
     avgRevPerMember: active.length ? cashCollected / active.length : 0,
     visitsThisMonth: sum(active, (m) => m.visitsThisMonth),
+    visitsThisYear: sum(active, (m) => m.visitsThisYear),
     pastDue: members.filter((m) => m.memberStatus === "Past Due" || m.paymentStatus === "Past Due").length,
     renewalsDue: members.filter((m) => m.renewalDate && m.renewalDate >= t && m.renewalDate <= in30).length,
     overdueDetails: active.filter((m) => m.nextDetailDate && m.nextDetailDate < t).length,
+    upcomingBookings: active.filter((m) => m.nextDetailDate && m.nextDetailDate >= t).length,
+    needingBooking: active.filter((m) => !m.nextDetailDate || m.nextDetailDate < t).length,
   };
+}
+
+/** Default perks for a new member, based on offer type + tier + payment plan. */
+export function defaultPerksForMember(m: CareMember): Omit<CarePerk, "id">[] {
+  const t = today();
+  const base = PERKS_CATALOG[m.offerType] ?? [];
+  const extras: { name: string; value: number }[] = [];
+  if (m.memberTier === "Founders 25") extras.push(FOUNDERS25_PERK);
+  const founding = m.offerType === "Founding 100 Charter Offer";
+  if (m.paymentPlan === "6-Month Pay-in-Full") extras.push({ name: "Free 1-Year Ceramic + Stage 1 Paint Correction", value: PIF_CERAMIC["6-Month Pay-in-Full"] });
+  if (m.paymentPlan === "12-Month Pay-in-Full") {
+    extras.push({ name: "Free 3-Year Ceramic + Stage 1 Paint Correction", value: PIF_CERAMIC["12-Month Pay-in-Full"] });
+    extras.push({ name: "Anniversary Detail", value: 300 });
+    if (!founding) extras.push({ name: "Monthly Bonus Service Upgrade", value: 200 });
+  }
+  const eligible = m.startDate || m.signupDate || t;
+  return [...base, ...extras].map((p) => ({
+    memberId: m.id, customerName: m.customerName, offerType: m.offerType, perkName: p.name, perkValue: p.value,
+    eligibleDate: eligible, usedDate: "", status: "Available" as const, urableJobId: "", urableJobLink: "", notes: "",
+  }));
 }
 
 /** Build a draft Care Club member from a booked/sold lead (Founding Monthly defaults). */
@@ -201,26 +243,33 @@ export function careLeadKpis(leads: CareClubLead[]): CareLeadKpis {
 
 /* ---------------- Care Club audit checks ---------------- */
 export interface Check { name: string; count: number; ids: string[]; }
-export function careAudit(members: CareMember[], visits: CareVisit[], jobs: Job[]): Check[] {
+export function careAudit(members: CareMember[], visits: CareVisit[], jobs: Job[], perks: CarePerk[] = []): Check[] {
   const memberNums = members.filter(isFounding).map((m) => m.memberNumber);
   const dupMemberId = dup(members.map((m) => m.id));
   const dupNum = members.filter(isFounding).filter((m) => m.memberNumber !== "" && memberNums.filter((n) => n === m.memberNumber).length > 1);
-  const jobLeadIds = new Set(jobs.map((j) => j.customerName)); // jobs (Phase-1 MVP has no leadId yet)
   const mk = (name: string, rows: CareMember[]) => ({ name, count: rows.length, ids: rows.map((r) => r.id) });
+  const ck = (name: string, rows: { id: string }[]) => ({ name, count: rows.length, ids: rows.map((r) => r.id) });
+  const perksByMember = (id: string) => perks.filter((p) => p.memberId === id);
+  const active = members.filter((m) => m.memberStatus === "Active");
   return [
     { name: "Duplicate Member ID", count: dupMemberId.length, ids: dupMemberId },
     mk("Duplicate Founding Member Number", dupNum),
     mk("Founding 100 cap exceeded", members.filter((m) => isFounding(m) && +m.memberNumber > 100)),
     mk("Founders 25 cap exceeded", members.filter((m) => m.memberTier === "Founders 25" && (+m.memberNumber < 1 || +m.memberNumber > 25))),
-    mk("Active member missing payment plan", members.filter((m) => m.memberStatus === "Active" && !m.paymentPlan)),
-    mk("Active member missing monthly rate / total", members.filter((m) => m.memberStatus === "Active" && !m.monthlyRate && !m.totalContractValue)),
-    mk("Active member missing GHL Contact Link", members.filter((m) => m.memberStatus === "Active" && !m.ghlContactLink)),
-    mk("Active member missing Founder Tech", members.filter((m) => m.memberStatus === "Active" && !m.assignedFounderTech)),
-    mk("Active member missing Next Detail Date", members.filter((m) => m.memberStatus === "Active" && !m.nextDetailDate)),
+    mk("Active member missing payment plan", active.filter((m) => !m.paymentPlan)),
+    mk("Active member missing Next Detail Date", active.filter((m) => !m.nextDetailDate)),
+    mk("Active member needs booking", active.filter((m) => bookingStatus(m).status === "Needs Booking")),
+    mk("Active member overdue for detail", active.filter((m) => bookingStatus(m).status === "Overdue")),
+    mk("Active member missing assigned Founder Tech", active.filter((m) => !m.assignedFounderTech)),
+    mk("Active member missing GHL Contact Link", active.filter((m) => !m.ghlContactLink)),
     mk("Past due member needs follow-up", members.filter((m) => m.memberStatus === "Past Due" || m.paymentStatus === "Past Due")),
-    { name: "Visit has Urable Job ID but no link", count: visits.filter((v) => v.urableJobId && !v.urableJobLink).length, ids: visits.filter((v) => v.urableJobId && !v.urableJobLink).map((v) => v.id) },
-    { name: "Care Club visit missing assigned tech", count: visits.filter((v) => !v.tech).length, ids: visits.filter((v) => !v.tech).map((v) => v.id) },
-    { name: "Completed visit not linked to member", count: visits.filter((v) => v.visitStatus === "Completed" && !v.memberId).length, ids: [] },
+    mk("Member has no default perks", active.filter((m) => perksByMember(m.id).length === 0)),
+    mk("PIF member missing ceramic bonus perk", active.filter((m) => (m.paymentPlan === "6-Month Pay-in-Full" || m.paymentPlan === "12-Month Pay-in-Full") && !perksByMember(m.id).some((p) => /ceramic/i.test(p.perkName)))),
+    mk("Founders 25 member missing Founders 25 Credit", active.filter((m) => m.memberTier === "Founders 25" && !perksByMember(m.id).some((p) => /founders 25 credit/i.test(p.perkName)))),
+    ck("Visit missing assigned tech", visits.filter((v) => !v.tech)),
+    ck("Visit missing Urable Job ID after completed", visits.filter((v) => v.visitStatus === "Completed" && !v.urableJobId)),
+    ck("Perk marked Used but missing Used Date", perks.filter((p) => p.status === "Used" && !p.usedDate)),
+    ck("Perk marked Scheduled but missing eligible date", perks.filter((p) => p.status === "Scheduled" && !p.eligibleDate)),
   ];
 }
 function dup(ids: string[]): string[] {

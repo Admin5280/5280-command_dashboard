@@ -178,7 +178,7 @@ export default function AuditPage() {
   }, [s.jobs, s.leads, s.expenses, s.marketing, s.payrollPayments, s.careMembers, s.financeSettings, s.payRules, s.techBasePay, s.salesReps]);
 
   const bookedGap = useMemo(() => bookedNotInJobs(s.leads, s.jobs), [s.leads, s.jobs]);
-  const careChecks = useMemo(() => careAudit(s.careMembers, s.careVisits, s.jobs), [s.careMembers, s.careVisits, s.jobs]);
+  const careChecks = useMemo(() => careAudit(s.careMembers, s.careVisits, s.jobs, s.carePerks), [s.careMembers, s.careVisits, s.jobs, s.carePerks]);
 
   // reconciliation
   const comp = completed(s.jobs);

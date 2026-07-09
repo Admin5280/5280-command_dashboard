@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, Expense, FinanceSettings, Job, Lead, MarketingSpend, PayRules, PayrollPayment, TechBasePayRule } from "./types";
 import { sampleData } from "./sampleData";
-import { careLeadFromJob } from "./careClub";
+import { careLeadFromJob, defaultPerksForMember } from "./careClub";
 import { uid } from "./format";
 
 const KEY = "5280-command-center:v1";
@@ -271,7 +271,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       setFinanceSettings: (fs) => setData((d) => ({ ...d, financeSettings: fs })),
 
-      addMember: (m) => addTo("careMembers", { ...m, id: uid() }),
+      addMember: (m) => setData((d) => {
+        const member = { ...m, id: uid() };
+        // auto-create default perks for the member's offer/plan (no duplicates)
+        const have = new Set(d.carePerks.filter((p) => p.memberId === member.id).map((p) => p.perkName));
+        const newPerks = defaultPerksForMember(member).filter((p) => !have.has(p.perkName)).map((p) => ({ ...p, id: uid() }));
+        return { ...d, careMembers: [member, ...d.careMembers], carePerks: [...newPerks, ...d.carePerks] };
+      }),
       updateMember: (m) => upd("careMembers", m),
       deleteMember: (id) => del("careMembers", id),
       addVisit: (v) => addTo("careVisits", { ...v, id: uid() }),
