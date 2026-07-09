@@ -19,6 +19,8 @@ const blank = (): Omit<Job, "id"> => ({
   confirmedSource: "", assignedSalesRep: "", techPayStatus: "Pending Review", salesCommissionStatus: "Pending Review",
   reviewRequestStatus: "Not Sent", reviewReceived: false, rating: 0, reviewNegative: false, callbackCount: 0, redoCount: 0, qualityStatus: "",
   cancellationDate: "", cancellationReason: "", canceledBy: "", depositCollected: false, refundNeeded: false, cancellationNotes: "",
+  processingFee: 0, netReceived: 0, paymentReference: "", checkNumber: "", zelleReference: "", stripePayoutId: "",
+  refundAmount: 0, refundReason: "", financeNotes: "",
   adminNotes: "", customerId: "", historical: false, createdAt: today(), updatedAt: today(),
 });
 
@@ -200,6 +202,15 @@ export default function JobsPage() {
               <div className="sm:col-span-3"><Field label="Cancellation Notes"><Textarea rows={2} value={form.cancellationNotes} onChange={(e) => set({ cancellationNotes: e.target.value })} /></Field></div>
             </>
           )}
+          <div className="sm:col-span-3 mt-1 text-xs uppercase tracking-wide text-muted">Finance</div>
+          <Field label="Processing Fee (blank = auto)"><Input type="number" value={form.processingFee} onChange={(e) => set({ processingFee: +e.target.value })} /></Field>
+          <Field label="Payment Reference"><Input value={form.paymentReference} onChange={(e) => set({ paymentReference: e.target.value })} /></Field>
+          <Field label="Check Number"><Input value={form.checkNumber} onChange={(e) => set({ checkNumber: e.target.value })} /></Field>
+          <Field label="Zelle Reference"><Input value={form.zelleReference} onChange={(e) => set({ zelleReference: e.target.value })} /></Field>
+          <Field label="Stripe Payout ID"><Input value={form.stripePayoutId} onChange={(e) => set({ stripePayoutId: e.target.value })} /></Field>
+          <Field label="Refund Amount"><Input type="number" value={form.refundAmount} onChange={(e) => set({ refundAmount: +e.target.value })} /></Field>
+          <Field label="Refund Reason"><Input value={form.refundReason} onChange={(e) => set({ refundReason: e.target.value })} /></Field>
+          <div className="sm:col-span-3"><Field label="Finance Notes"><Textarea rows={2} value={form.financeNotes} onChange={(e) => set({ financeNotes: e.target.value })} /></Field></div>
           <div className="sm:col-span-3"><Field label="Admin Notes / Resolution Notes"><Textarea rows={2} value={form.adminNotes} onChange={(e) => set({ adminNotes: e.target.value })} /></Field></div>
         </div>
         <div className="flex justify-end gap-2 mt-4">

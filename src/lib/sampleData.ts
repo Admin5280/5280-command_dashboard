@@ -1,4 +1,4 @@
-import { AppData, CARE_UNITS, DEFAULT_PAY_RULES } from "./types";
+import { AppData, CARE_UNITS, DEFAULT_PAY_RULES, DEFAULT_FINANCE_SETTINGS } from "./types";
 
 export const DEFAULT_SOURCES = [
   "Google Ads", "Google LSA", "Google Business Profile", "Meta Ads", "Instagram",
@@ -24,6 +24,9 @@ export function sampleData(): AppData {
     units: [...CARE_UNITS],
     leads: leadSample(),
     jobs: jobSample(),
+    expenses: [],
+    financeSettings: { ...DEFAULT_FINANCE_SETTINGS },
+    payrollPayments: [],
     marketing: [
       { id: "m1", date: "2026-06-01", channel: "Google Ads", campaign: "Search - Detailing", spend: 1800, leads: 42, bookedJobs: 16, revenue: 7200, notes: "" },
       { id: "m2", date: "2026-06-01", channel: "Google LSA", campaign: "LSA Calls", spend: 950, leads: 30, bookedJobs: 12, revenue: 4800, notes: "" },
@@ -145,6 +148,8 @@ function jb(o: Partial<J>): J {
     salesCommissionStatus: "Approved", reviewRequestStatus: "Not Sent", reviewReceived: false, rating: 0, reviewNegative: false,
     callbackCount: 0, redoCount: 0, qualityStatus: "",
     cancellationDate: "", cancellationReason: "", canceledBy: "", depositCollected: false, refundNeeded: false, cancellationNotes: "",
+    processingFee: 0, netReceived: 0, paymentReference: "", checkNumber: "", zelleReference: "", stripePayoutId: "",
+    refundAmount: 0, refundReason: "", financeNotes: "",
     adminNotes: "", customerId: "", historical: false, createdAt: "2026-06-05", updatedAt: "2026-06-05", ...o };
   b.totalRevenue = b.subtotal + b.techUpsellAmount + b.tip + b.addOnsValue - b.discount;
   if (b.amountPaid === 0 && b.paymentStatus === "Fully Paid") b.amountPaid = b.totalRevenue;

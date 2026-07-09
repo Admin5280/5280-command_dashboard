@@ -110,6 +110,16 @@ export interface Job {
   callbackCount: number;
   redoCount: number;
   qualityStatus: string;
+  // finance
+  processingFee: number;
+  netReceived: number;
+  paymentReference: string;
+  checkNumber: string;
+  zelleReference: string;
+  stripePayoutId: string;
+  refundAmount: number;
+  refundReason: string;
+  financeNotes: string;
   // cancellation tracking
   cancellationDate: string;
   cancellationReason: CancellationReason;
@@ -317,10 +327,44 @@ export interface CareClubLead {
   updatedAt: string;
 }
 
+/* ---------------- Finance ---------------- */
+export const EXPENSE_CATEGORIES = [
+  "Chemicals", "Tools & Supplies", "Gas", "Marketing - Meta", "Marketing - Google Ads", "Marketing - Google LSA",
+  "Software", "Vehicle Payment", "Vehicle Insurance", "Office & Admin", "Company Food", "VA Pay", "Owner Pay",
+  "Customer Refund", "Tolls", "Payroll Adjustment", "Other",
+];
+export const FINANCE_PAYMENT_METHODS = ["Stripe", "Card", "Cash", "Zelle", "Check", "Bank Transfer", "Other"];
+
+export interface Expense {
+  id: string; date: string; weekStart: string; weekEnd: string; category: string; reason: string; vendor: string;
+  amount: number; paymentMethod: string; accountLast4: string; receiptLink: string; notes: string; enteredBy: string;
+  createdAt: string; updatedAt: string;
+}
+
+export interface FinanceSettings {
+  stripeFeePct: number;    // fraction, e.g. 0.029
+  stripeFixedFee: number;  // e.g. 0.30 per transaction
+  taxEstimatePct: number;  // fraction, e.g. 0.15
+  monthlyOverhead: number;
+  defaultLast4: string;
+}
+export const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
+  stripeFeePct: 0.029, stripeFixedFee: 0.30, taxEstimatePct: 0.15, monthlyOverhead: 0, defaultLast4: "",
+};
+
+export interface PayrollPayment {
+  id: string; periodStart: string; periodEnd: string; type: "Technician" | "Sales"; name: string;
+  totalPay: number; amountPaid: number; paymentMethod: string; checkNumber: string; zelleReference: string;
+  paidDate: string; payStatus: string; notes: string;
+}
+
 export interface AppData {
   leads: Lead[];
   jobs: Job[];
   marketing: MarketingSpend[];
+  expenses: Expense[];
+  financeSettings: FinanceSettings;
+  payrollPayments: PayrollPayment[];
   sources: string[];
   services: string[];
   salesReps: string[];

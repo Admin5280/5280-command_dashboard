@@ -24,7 +24,11 @@ function rowToJob(r: any): Job {
     callbackCount: Number(r.callback_count) || 0, redoCount: Number(r.redo_count) || 0, qualityStatus: r.quality_status || "",
     cancellationDate: r.cancellation_date || "", cancellationReason: (r.cancellation_reason || "") as Job["cancellationReason"],
     canceledBy: r.canceled_by || "", depositCollected: !!r.deposit_collected, refundNeeded: !!r.refund_needed,
-    cancellationNotes: r.cancellation_notes || "", adminNotes: r.admin_notes || "", customerId: r.customer_id || "",
+    cancellationNotes: r.cancellation_notes || "",
+    processingFee: Number(r.processing_fee) || 0, netReceived: Number(r.net_received) || 0, paymentReference: r.payment_reference || "",
+    checkNumber: r.check_number || "", zelleReference: r.zelle_reference || "", stripePayoutId: r.stripe_payout_id || "",
+    refundAmount: Number(r.refund_amount) || 0, refundReason: r.refund_reason || "", financeNotes: r.finance_notes || "",
+    adminNotes: r.admin_notes || "", customerId: r.customer_id || "",
     historical: !!r.historical, createdAt: r.created_at || "", updatedAt: r.updated_at || "",
   };
 }
@@ -44,8 +48,11 @@ function jobToRow(j: Partial<Job>): any {
     review_received: !!j.reviewReceived, rating: j.rating || 0, review_negative: !!j.reviewNegative, callback_count: j.callbackCount || 0,
     redo_count: j.redoCount || 0, quality_status: j.qualityStatus || "", cancellation_date: j.cancellationDate || "",
     cancellation_reason: j.cancellationReason || "", canceled_by: j.canceledBy || "", deposit_collected: !!j.depositCollected,
-    refund_needed: !!j.refundNeeded, cancellation_notes: j.cancellationNotes || "", admin_notes: j.adminNotes || "",
-    customer_id: j.customerId || "", historical: !!j.historical, updated_at: new Date().toISOString(),
+    refund_needed: !!j.refundNeeded, cancellation_notes: j.cancellationNotes || "",
+    processing_fee: j.processingFee || 0, net_received: j.netReceived || 0, payment_reference: j.paymentReference || "",
+    check_number: j.checkNumber || "", zelle_reference: j.zelleReference || "", stripe_payout_id: j.stripePayoutId || "",
+    refund_amount: j.refundAmount || 0, refund_reason: j.refundReason || "", finance_notes: j.financeNotes || "",
+    admin_notes: j.adminNotes || "", customer_id: j.customerId || "", historical: !!j.historical, updated_at: new Date().toISOString(),
   };
 }
 

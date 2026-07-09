@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { Job, Lead } from "@/lib/types";
 import { leadFlags, bookedNotInJobs, completedJobsMissingCareLead, dupCareLeadsBy, soldCareLeadsWithoutMember } from "@/lib/guardrails";
-import { careAudit } from "@/lib/careClub";
+import { careAudit, careKpis } from "@/lib/careClub";
 import { serviceQuality } from "@/lib/quality";
 import { techOps } from "@/lib/operations";
+import { financeKpis } from "@/lib/finance";
 import { completed, marketingByChannel } from "@/lib/metrics";
 import { money, sum, today } from "@/lib/format";
 import { Card, Kpi, PageHeader, Section } from "@/components/ui";
@@ -153,6 +154,29 @@ export default function AuditPage() {
     ];
   }, [s.leads, failedWebhooks]);
 
+  const financeChecks = useMemo<Row[]>(() => {
+    const comp = s.jobs.filter((j) => j.jobStatus === "Completed");
+    const jf = (arr: Job[], name: string, href = "/jobs"): Row => ({ name, count: arr.length, sample: arr.slice(0, 6).map((j) => j.customerName || j.leadId || "?").join(", "), href });
+    const k = financeKpis({ jobs: s.jobs, leads: s.leads, expenses: s.expenses, marketing: s.marketing, payRules: s.payRules, techBasePay: s.techBasePay, salesReps: s.salesReps, fs: s.financeSettings, careCash: careKpis(s.careMembers, "", "").cashCollected, overhead: s.financeSettings.monthlyOverhead });
+    const payrollUnpaid = k.totalPayroll - sum(s.payrollPayments, (p) => p.amountPaid);
+    const gapHigh = k.bookedRevenue > 0 && k.collectedRevenue < 0.8 * k.bookedRevenue;
+    return [
+      jf(comp.filter((j) => !j.paymentMethod), "Completed jobs missing payment method"),
+      jf(comp.filter((j) => j.amountPaid === 0 && j.totalRevenue > 0), "Completed jobs missing amount paid"),
+      jf(s.jobs.filter((j) => j.amountDue > 0), "Jobs with amount due", "/finance"),
+      jf(s.jobs.filter((j) => j.paymentMethod === "Stripe" && j.amountPaid > 0 && j.processingFee === 0), "Stripe payments missing processing fee"),
+      jf(s.jobs.filter((j) => j.paymentMethod === "Zelle" && j.amountPaid > 0 && !j.zelleReference), "Zelle payments missing reference"),
+      jf(s.jobs.filter((j) => j.paymentMethod === "Check" && j.amountPaid > 0 && !j.checkNumber), "Check payments missing check number"),
+      jf(s.jobs.filter((j) => (j.jobStatus === "Refunded" || j.refundAmount > 0) && !j.refundReason), "Refunded jobs missing refund reason"),
+      { name: "Payroll due but not marked paid", count: payrollUnpaid > 1 ? 1 : 0, sample: payrollUnpaid > 1 ? `${money(payrollUnpaid)} unpaid` : "", href: "/finance" },
+      { name: "Expenses missing category", count: s.expenses.filter((e) => !e.category).length, sample: "", href: "/finance" },
+      { name: "Expenses missing payment method", count: s.expenses.filter((e) => !e.paymentMethod).length, sample: "", href: "/finance" },
+      { name: "Expense entries missing receipt link", count: s.expenses.filter((e) => e.amount > 0 && !e.receiptLink).length, sample: "", href: "/finance" },
+      { name: "Revenue gap above target (collected < 80% booked)", count: gapHigh ? 1 : 0, sample: gapHigh ? `${money(k.revenueGap)} gap` : "", href: "/finance" },
+      { name: "Negative net profit (all-time)", count: k.netProfit < 0 ? 1 : 0, sample: k.netProfit < 0 ? money(k.netProfit) : "", href: "/finance" },
+    ];
+  }, [s.jobs, s.leads, s.expenses, s.marketing, s.payrollPayments, s.careMembers, s.financeSettings, s.payRules, s.techBasePay, s.salesReps]);
+
   const bookedGap = useMemo(() => bookedNotInJobs(s.leads, s.jobs), [s.leads, s.jobs]);
   const careChecks = useMemo(() => careAudit(s.careMembers, s.careVisits, s.jobs), [s.careMembers, s.careVisits, s.jobs]);
 
@@ -166,7 +190,7 @@ export default function AuditPage() {
     (j.paymentStatus === "Fully Paid" && j.amountDue > 0) ||
     (j.paymentStatus === "Unpaid" && j.amountPaid > 0));
 
-  const allRows = [...leadChecks, ...ghlChecks, ...jobChecks, ...claimChecks, ...qualityChecks, ...marketingChecks, ...careLeadChecks];
+  const allRows = [...leadChecks, ...ghlChecks, ...jobChecks, ...claimChecks, ...qualityChecks, ...financeChecks, ...marketingChecks, ...careLeadChecks];
   const openIssues = sum(allRows, (r) => r.count) + bookedGap.length + sum(careChecks, (c) => c.count) + payMismatch.length + (revMismatch !== 0 ? 1 : 0);
 
   const CheckTable = ({ rows }: { rows: Row[] }) => (
@@ -216,6 +240,7 @@ export default function AuditPage() {
       <Section title="Sales & Claim Checks"><CheckTable rows={claimChecks} /></Section>
       <Section title="Job Health & Payroll Readiness"><CheckTable rows={jobChecks} /></Section>
       <Section title="Quality & Reputation Checks"><CheckTable rows={qualityChecks} /></Section>
+      <Section title="Finance Checks"><CheckTable rows={financeChecks} /></Section>
       <Section title="Marketing Checks"><CheckTable rows={marketingChecks} /></Section>
       <Section title="Care Club Pipeline Checks"><CheckTable rows={careLeadChecks} /></Section>
 

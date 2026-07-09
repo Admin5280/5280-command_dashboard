@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, Job, Lead, MarketingSpend, PayRules, TechBasePayRule } from "./types";
+import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, Expense, FinanceSettings, Job, Lead, MarketingSpend, PayRules, PayrollPayment, TechBasePayRule } from "./types";
 import { sampleData } from "./sampleData";
 import { careLeadFromJob } from "./careClub";
 import { uid } from "./format";
@@ -38,6 +38,16 @@ interface Store extends AppData {
   addMarketing: (m: Omit<MarketingSpend, "id">) => void;
   updateMarketing: (m: MarketingSpend) => void;
   deleteMarketing: (id: string) => void;
+
+  addExpense: (e: Omit<Expense, "id">) => void;
+  updateExpense: (e: Expense) => void;
+  deleteExpense: (id: string) => void;
+
+  addPayrollPayment: (p: Omit<PayrollPayment, "id">) => void;
+  updatePayrollPayment: (p: PayrollPayment) => void;
+  deletePayrollPayment: (id: string) => void;
+
+  setFinanceSettings: (s: FinanceSettings) => void;
 
   addMember: (m: Omit<CareMember, "id">) => void;
   updateMember: (m: CareMember) => void;
@@ -108,6 +118,9 @@ function load(): AppData {
       leads: parsed.leads ?? [],
       jobs: parsed.jobs ?? [],
       marketing: parsed.marketing ?? [],
+      expenses: parsed.expenses ?? [],
+      financeSettings: parsed.financeSettings ?? s.financeSettings,
+      payrollPayments: parsed.payrollPayments ?? [],
       sources: parsed.sources ?? s.sources,
       services: parsed.services ?? s.services,
       salesReps: parsed.salesReps ?? s.salesReps,
@@ -177,7 +190,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const patch = (p: Partial<AppData>) => setData((d) => ({ ...d, ...p }));
     const inRange = (iso: string) => (!from || iso >= from) && (!to || iso <= to);
 
-    type Coll = "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks" | "careClubLeads" | "techBasePay";
+    type Coll = "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks" | "careClubLeads" | "techBasePay" | "expenses" | "payrollPayments";
     const addTo = <K extends Coll>(k: K, row: AppData[K][number]) =>
       setData((d) => ({ ...d, [k]: [row, ...d[k]] }));
     const upd = <K extends Coll>(k: K, row: { id: string }) =>
@@ -248,6 +261,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateMarketing: (m) => upd("marketing", m),
       deleteMarketing: (id) => del("marketing", id),
 
+      addExpense: (e) => addTo("expenses", { ...e, id: uid() }),
+      updateExpense: (e) => upd("expenses", e),
+      deleteExpense: (id) => del("expenses", id),
+
+      addPayrollPayment: (p) => addTo("payrollPayments", { ...p, id: uid() }),
+      updatePayrollPayment: (p) => upd("payrollPayments", p),
+      deletePayrollPayment: (id) => del("payrollPayments", id),
+
+      setFinanceSettings: (fs) => setData((d) => ({ ...d, financeSettings: fs })),
+
       addMember: (m) => addTo("careMembers", { ...m, id: uid() }),
       updateMember: (m) => upd("careMembers", m),
       deleteMember: (id) => del("careMembers", id),
@@ -293,6 +316,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           const s = sampleData();
           patch({
             leads: p.leads, jobs: p.jobs, marketing: p.marketing ?? [],
+            expenses: p.expenses ?? [], financeSettings: p.financeSettings ?? s.financeSettings, payrollPayments: p.payrollPayments ?? [],
             sources: p.sources ?? s.sources, services: p.services ?? s.services,
             salesReps: p.salesReps ?? s.salesReps, technicians: p.technicians ?? s.technicians, units: p.units ?? s.units,
             careMembers: p.careMembers ?? [], careVisits: p.careVisits ?? [], carePerks: p.carePerks ?? [],
@@ -303,7 +327,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         } catch { return false; }
       },
       resetSample: () => setData(sampleData()),
-      clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
+      clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], expenses: [], payrollPayments: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
     };
   }, [data, ready, from, to, currentRep, leadsRemote, jobsRemote]);
 
