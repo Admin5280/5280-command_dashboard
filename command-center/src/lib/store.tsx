@@ -1,0 +1,488 @@
+"use client";
+
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, DEFAULT_DROPDOWNS, Expense, FinanceSettings, Job, KpiTargets, Lead, MarketingSpend, Overhead, PayRules, PayrollPayment, ServiceCatalogItem, TechBasePayRule } from "./types";
+import { sampleData } from "./sampleData";
+import { careLeadFromJob, defaultPerksForMember } from "./careClub";
+import { uid } from "./format";
+
+const KEY = "5280-command-center:v1";
+
+type SettingKind = "sources" | "services" | "salesReps" | "technicians" | "units";
+
+interface Store extends AppData {
+  ready: boolean;
+  // global date filter (used by dashboards)
+  from: string;
+  to: string;
+  setRange: (from: string, to: string) => void;
+  inRange: (iso: string) => boolean;
+  // "current user" sales rep (shared by Sales dashboard + Leads "Assigned To Me")
+  currentRep: string;
+  setCurrentRep: (rep: string) => void;
+  // leads are served from Supabase when the server is configured
+  leadsRemote: boolean;
+  migrateLeadsToCloud: () => Promise<{ ok: boolean; count?: number; error?: string }>;
+  // jobs are served from Supabase when the server is configured
+  jobsRemote: boolean;
+  migrateJobsToCloud: () => Promise<{ ok: boolean; found?: number; migrated?: number; skipped?: number; errors?: number; error?: string }>;
+
+  addLead: (l: Omit<Lead, "id">) => void;
+  updateLead: (l: Lead) => void;
+  deleteLead: (id: string) => void;
+
+  addJob: (j: Omit<Job, "id">) => void;
+  updateJob: (j: Job) => void;
+  deleteJob: (id: string) => void;
+
+  addMarketing: (m: Omit<MarketingSpend, "id">) => void;
+  updateMarketing: (m: MarketingSpend) => void;
+  deleteMarketing: (id: string) => void;
+
+  addExpense: (e: Omit<Expense, "id">) => void;
+  updateExpense: (e: Expense) => void;
+  deleteExpense: (id: string) => void;
+
+  addPayrollPayment: (p: Omit<PayrollPayment, "id">) => void;
+  updatePayrollPayment: (p: PayrollPayment) => void;
+  deletePayrollPayment: (id: string) => void;
+
+  setFinanceSettings: (s: FinanceSettings) => void;
+
+  // v2 cloud entities (Care Club + Finance moved to Supabase)
+  careRemote: boolean;
+  expensesRemote: boolean;
+  overheadRemote: boolean;
+  catalogRemote: boolean;
+  financeRemote: boolean;
+  kpiRemote: boolean;
+  migrateCareToCloud: () => Promise<{ ok: boolean; members?: number; visits?: number; perks?: number; skipped?: number; errors?: number; error?: string }>;
+  migrateFinanceToCloud: () => Promise<{ ok: boolean; migrated?: number; skipped?: number; errors?: number; error?: string }>;
+  seedServiceCatalog: () => Promise<{ ok: boolean; inserted?: number; updated?: number; total?: number; error?: string }>;
+
+  addOverhead: (o: Omit<Overhead, "id">) => void;
+  updateOverhead: (o: Overhead) => void;
+  deleteOverhead: (id: string) => void;
+
+  updateServiceItem: (i: ServiceCatalogItem) => void;
+  setKpiTargets: (t: KpiTargets) => void;
+
+  // editable dropdown options (managed in Settings)
+  optionsFor: (category: string) => string[];
+  addDropdown: (category: string, value: string) => void;
+  removeDropdown: (category: string, value: string) => void;
+  moveDropdown: (category: string, value: string, dir: "up" | "down") => void;
+
+  addMember: (m: Omit<CareMember, "id">) => void;
+  updateMember: (m: CareMember) => void;
+  deleteMember: (id: string) => void;
+  addVisit: (v: Omit<CareVisit, "id">) => void;
+  updateVisit: (v: CareVisit) => void;
+  deleteVisit: (id: string) => void;
+  addPerk: (p: Omit<CarePerk, "id">) => void;
+  updatePerk: (p: CarePerk) => void;
+  deletePerk: (id: string) => void;
+
+  addCareLead: (c: Omit<CareClubLead, "id">) => void;
+  updateCareLead: (c: CareClubLead) => void;
+  deleteCareLead: (id: string) => void;
+
+  addBasePay: (r: Omit<TechBasePayRule, "id">) => void;
+  updateBasePay: (r: TechBasePayRule) => void;
+  deleteBasePay: (id: string) => void;
+
+  addSetting: (kind: SettingKind, value: string) => void;
+  removeSetting: (kind: SettingKind, value: string) => void;
+
+  setPayRules: (rules: PayRules) => void;
+
+  exportJSON: () => void;
+  importJSON: (json: string) => boolean;
+  resetSample: () => void;
+  clearAll: () => void;
+}
+
+const Ctx = createContext<Store | null>(null);
+
+function nextCareLeadId(list: CareClubLead[]): string {
+  const nums = list.map((c) => +(c.careLeadId.match(/CL-(\d+)/)?.[1] ?? 0));
+  return `CL-${Math.max(3000, ...nums) + 1}`;
+}
+
+/** When a job is completed, ensure a Care Club lead exists and move its original lead into the pipeline. */
+function completeJobEffects(d: AppData, job: Job): Partial<AppData> {
+  if (!job.dateCompleted) return {};
+  const patch: Partial<AppData> = {};
+  const exists = d.careClubLeads.some((cl) =>
+    cl.completedJobId === job.id ||
+    (job.leadId && cl.originalLeadId === job.leadId) ||
+    (job.urableJobId && cl.urableJobId === job.urableJobId));
+  if (!exists) {
+    const lead = d.leads.find((l) => l.leadId === job.leadId);
+    const careLeadId = nextCareLeadId(d.careClubLeads);
+    patch.careClubLeads = [{ ...careLeadFromJob(job, lead, careLeadId), id: uid() }, ...d.careClubLeads];
+  }
+  let changed = false;
+  const leads = d.leads.map((l) => {
+    if (l.leadId && l.leadId === job.leadId && l.status === "Booked") { changed = true; return { ...l, status: "Completed Job" as const }; }
+    return l;
+  });
+  if (changed) patch.leads = leads;
+  return patch;
+}
+
+function load(): AppData {
+  if (typeof window === "undefined") return sampleData();
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return sampleData();
+    const parsed = JSON.parse(raw) as Partial<AppData>;
+    const s = sampleData();
+    return {
+      leads: parsed.leads ?? [],
+      jobs: parsed.jobs ?? [],
+      marketing: parsed.marketing ?? [],
+      expenses: parsed.expenses ?? [],
+      financeSettings: parsed.financeSettings ?? s.financeSettings,
+      payrollPayments: parsed.payrollPayments ?? [],
+      dropdowns: parsed.dropdowns ?? {},
+      sources: parsed.sources ?? s.sources,
+      services: parsed.services ?? s.services,
+      salesReps: parsed.salesReps ?? s.salesReps,
+      technicians: parsed.technicians ?? s.technicians,
+      units: parsed.units ?? s.units,
+      careMembers: parsed.careMembers ?? s.careMembers,
+      careVisits: parsed.careVisits ?? s.careVisits,
+      carePerks: parsed.carePerks ?? s.carePerks,
+      careClubLeads: parsed.careClubLeads ?? s.careClubLeads,
+      techBasePay: parsed.techBasePay ?? s.techBasePay,
+      payRules: parsed.payRules ?? s.payRules,
+      payRulesHistory: parsed.payRulesHistory ?? s.payRulesHistory,
+      serviceCatalog: parsed.serviceCatalog ?? s.serviceCatalog,
+      overhead: parsed.overhead ?? s.overhead,
+      kpiTargets: parsed.kpiTargets ?? s.kpiTargets,
+    };
+  } catch {
+    return sampleData();
+  }
+}
+
+export function StoreProvider({ children }: { children: React.ReactNode }) {
+  const [data, setData] = useState<AppData>(() => sampleData());
+  const [ready, setReady] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [currentRep, setCurrentRepState] = useState("");
+  const [leadsRemote, setLeadsRemote] = useState(false);
+  const [jobsRemote, setJobsRemote] = useState(false);
+  const [careRemote, setCareRemote] = useState(false);
+  const [expensesRemote, setExpensesRemote] = useState(false);
+  const [overheadRemote, setOverheadRemote] = useState(false);
+  const [catalogRemote, setCatalogRemote] = useState(false);
+  const [financeRemote, setFinanceRemote] = useState(false);
+  const [kpiRemote, setKpiRemote] = useState(false);
+
+  // hydrate from localStorage after mount (avoids SSR mismatch)
+  useEffect(() => {
+    setData(load());
+    try { setCurrentRepState(localStorage.getItem("5280-current-rep") ?? ""); } catch { /* ignore */ }
+    setReady(true);
+  }, []);
+
+  // if the server has Supabase configured, leads live there — load them and switch to remote mode
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    fetch("/api/leads").then((r) => r.json()).then((j) => {
+      if (!cancelled && j && j.configured && Array.isArray(j.leads)) {
+        setData((d) => ({ ...d, leads: j.leads }));
+        setLeadsRemote(true);
+      }
+    }).catch(() => { /* stay on localStorage */ });
+    return () => { cancelled = true; };
+  }, [ready]);
+
+  // if Supabase is configured, jobs live there too — load them and switch to remote mode
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    fetch("/api/jobs").then((r) => r.json()).then((j) => {
+      if (!cancelled && j && j.configured && Array.isArray(j.jobs)) {
+        setData((d) => ({ ...d, jobs: j.jobs }));
+        setJobsRemote(true);
+      }
+    }).catch(() => { /* stay on localStorage */ });
+    return () => { cancelled = true; };
+  }, [ready]);
+
+  // v2: Care Club + Finance + Service Catalog + KPI Targets from Supabase when configured.
+  // Each slice is independent; a failed/absent endpoint just keeps that slice on localStorage.
+  // GUARD: never replace a non-empty LOCAL list with an EMPTY cloud list — the new tables
+  // start empty, so before migration cloud returns []; adopting it would wipe local data.
+  // We only switch a slice to "remote" once cloud is authoritative (has rows) or local is empty.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const local = {
+      care: data.careMembers.length, visits: data.careVisits.length, perks: data.carePerks.length,
+      exp: data.expenses.length, over: data.overhead.length, cat: data.serviceCatalog.length,
+    };
+    const grab = (url: string, fn: (j: unknown) => void) =>
+      fetch(url).then((r) => r.json()).then((j) => { if (!cancelled) fn(j); }).catch(() => {});
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    grab("/api/care-members", (j: any) => { if (j?.configured && Array.isArray(j.members) && (j.members.length > 0 || local.care === 0)) { setData((d) => ({ ...d, careMembers: j.members })); setCareRemote(true); } });
+    grab("/api/care-visits", (j: any) => { if (j?.configured && Array.isArray(j.visits) && (j.visits.length > 0 || local.visits === 0)) setData((d) => ({ ...d, careVisits: j.visits })); });
+    grab("/api/care-perks", (j: any) => { if (j?.configured && Array.isArray(j.perks) && (j.perks.length > 0 || local.perks === 0)) setData((d) => ({ ...d, carePerks: j.perks })); });
+    grab("/api/expenses", (j: any) => { if (j?.configured && Array.isArray(j.expenses) && (j.expenses.length > 0 || local.exp === 0)) { setData((d) => ({ ...d, expenses: j.expenses })); setExpensesRemote(true); } });
+    grab("/api/overhead", (j: any) => { if (j?.configured && Array.isArray(j.overhead) && (j.overhead.length > 0 || local.over === 0)) { setData((d) => ({ ...d, overhead: j.overhead })); setOverheadRemote(true); } });
+    grab("/api/service-catalog", (j: any) => { if (j?.configured && Array.isArray(j.catalog) && (j.catalog.length > 0 || local.cat === 0)) { setData((d) => ({ ...d, serviceCatalog: j.catalog })); setCatalogRemote(true); } });
+    // single-row config: enable write-through, but never auto-overwrite local settings/targets (owner may have local edits not yet migrated)
+    grab("/api/finance-settings", (j: any) => { if (j?.configured) setFinanceRemote(true); });
+    grab("/api/kpi-targets", (j: any) => { if (j?.configured) setKpiRemote(true); });
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // persist on change (only once ready so we don't clobber storage with defaults)
+  useEffect(() => {
+    if (ready) localStorage.setItem(KEY, JSON.stringify(data));
+  }, [data, ready]);
+
+  const store = useMemo<Store>(() => {
+    const patch = (p: Partial<AppData>) => setData((d) => ({ ...d, ...p }));
+    const inRange = (iso: string) => (!from || iso >= from) && (!to || iso <= to);
+
+    type Coll = "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks" | "careClubLeads" | "techBasePay" | "expenses" | "payrollPayments" | "overhead" | "serviceCatalog";
+    const addTo = <K extends Coll>(k: K, row: AppData[K][number]) =>
+      setData((d) => ({ ...d, [k]: [row, ...d[k]] }));
+    const upd = <K extends Coll>(k: K, row: { id: string }) =>
+      setData((d) => ({ ...d, [k]: (d[k] as { id: string }[]).map((r) => (r.id === row.id ? row : r)) as AppData[K] }));
+    const del = <K extends Coll>(k: K, id: string) =>
+      setData((d) => ({ ...d, [k]: (d[k] as { id: string }[]).filter((r) => r.id !== id) as AppData[K] }));
+
+    const JSONH = { "content-type": "application/json" };
+    const pushLeadRemote = (l: Lead) =>
+      fetch(`/api/leads/${l.id}`, { method: "PATCH", headers: JSONH, body: JSON.stringify(l) }).catch(() => {});
+    // generic write-through helpers for v2 cloud entities (fire-and-forget; local state is optimistic)
+    const rPost = (url: string, body: unknown) => fetch(url, { method: "POST", headers: JSONH, body: JSON.stringify(body) }).catch(() => {});
+    const rPatch = (url: string, body: unknown) => fetch(url, { method: "PATCH", headers: JSONH, body: JSON.stringify(body) }).catch(() => {});
+    const rPut = (url: string, body: unknown) => fetch(url, { method: "PUT", headers: JSONH, body: JSON.stringify(body) }).catch(() => {});
+    const rDel = (url: string) => fetch(url, { method: "DELETE" }).catch(() => {});
+
+    return {
+      ...data,
+      ready,
+      from, to,
+      setRange: (f, t) => { setFrom(f); setTo(t); },
+      inRange,
+      currentRep,
+      setCurrentRep: (rep) => { setCurrentRepState(rep); try { localStorage.setItem("5280-current-rep", rep); } catch { /* ignore */ } },
+      leadsRemote,
+      migrateLeadsToCloud: async () => {
+        try {
+          const res = await fetch("/api/leads/migrate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ leads: data.leads }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const refreshed = await fetch("/api/leads").then((r) => r.json());
+          if (refreshed?.configured && Array.isArray(refreshed.leads)) { setData((d) => ({ ...d, leads: refreshed.leads })); setLeadsRemote(true); }
+          return { ok: true, count: j.count };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+      jobsRemote,
+      migrateJobsToCloud: async () => {
+        try {
+          const res = await fetch("/api/jobs/migrate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobs: data.jobs }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const refreshed = await fetch("/api/jobs").then((r) => r.json());
+          if (refreshed?.configured && Array.isArray(refreshed.jobs)) { setData((d) => ({ ...d, jobs: refreshed.jobs })); setJobsRemote(true); }
+          return { ok: true, found: j.found, migrated: j.migrated, skipped: j.skipped, errors: j.errors };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+
+      careRemote, expensesRemote, overheadRemote, catalogRemote, financeRemote, kpiRemote,
+      migrateCareToCloud: async () => {
+        try {
+          const res = await fetch("/api/care/migrate", { method: "POST", headers: JSONH, body: JSON.stringify({ members: data.careMembers, visits: data.careVisits, perks: data.carePerks }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const [m, v, p] = await Promise.all([
+            fetch("/api/care-members").then((r) => r.json()), fetch("/api/care-visits").then((r) => r.json()), fetch("/api/care-perks").then((r) => r.json()),
+          ]);
+          setData((d) => ({
+            ...d, careMembers: Array.isArray(m.members) ? m.members : d.careMembers,
+            careVisits: Array.isArray(v.visits) ? v.visits : d.careVisits, carePerks: Array.isArray(p.perks) ? p.perks : d.carePerks,
+          }));
+          setCareRemote(true);
+          return { ok: true, members: j.members, visits: j.visits, perks: j.perks, skipped: j.skipped, errors: j.errors };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+      migrateFinanceToCloud: async () => {
+        try {
+          await fetch("/api/finance-settings", { method: "PUT", headers: JSONH, body: JSON.stringify(data.financeSettings) });
+          const res = await fetch("/api/expenses/migrate", { method: "POST", headers: JSONH, body: JSON.stringify({ expenses: data.expenses }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const ex = await fetch("/api/expenses").then((r) => r.json());
+          if (Array.isArray(ex.expenses)) setData((d) => ({ ...d, expenses: ex.expenses }));
+          setExpensesRemote(true); setFinanceRemote(true);
+          return { ok: true, migrated: j.migrated, skipped: j.skipped, errors: j.errors };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+      seedServiceCatalog: async () => {
+        try {
+          const res = await fetch("/api/service-catalog/seed", { method: "POST" });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Seed failed" };
+          const cat = await fetch("/api/service-catalog").then((r) => r.json());
+          if (Array.isArray(cat.catalog)) { setData((d) => ({ ...d, serviceCatalog: cat.catalog })); setCatalogRemote(true); }
+          return { ok: true, inserted: j.inserted, updated: j.updated, total: j.total };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+
+      addLead: (l) => {
+        if (leadsRemote) {
+          const temp = { ...l, id: uid() } as Lead;
+          setData((d) => ({ ...d, leads: [temp, ...d.leads] }));
+          fetch("/api/leads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(l) })
+            .then((r) => r.json()).then(({ lead }) => { if (lead) setData((d) => ({ ...d, leads: d.leads.map((x) => (x.id === temp.id ? lead : x)) })); }).catch(() => {});
+        } else addTo("leads", { ...l, id: uid() });
+      },
+      updateLead: (l) => { upd("leads", l); if (leadsRemote) pushLeadRemote(l); },
+      deleteLead: (id) => { del("leads", id); if (leadsRemote) fetch(`/api/leads/${id}`, { method: "DELETE" }).catch(() => {}); },
+
+      addJob: (j) => {
+        const job = { ...j, id: uid() };
+        if (leadsRemote) { const eff = completeJobEffects(data, job); (eff.leads ?? []).forEach((nl) => { const b = data.leads.find((x) => x.id === nl.id); if (b && b.status !== nl.status) pushLeadRemote(nl); }); }
+        setData((d) => ({ ...d, jobs: [job, ...d.jobs], ...completeJobEffects(d, job) }));
+        if (jobsRemote) fetch("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(j) })
+          .then((r) => r.json()).then(({ job: saved }) => { if (saved) setData((d) => ({ ...d, jobs: d.jobs.map((x) => (x.id === job.id ? saved : x)) })); }).catch(() => {});
+      },
+      updateJob: (j) => {
+        if (leadsRemote) { const eff = completeJobEffects({ ...data, jobs: data.jobs.map((r) => (r.id === j.id ? j : r)) }, j); (eff.leads ?? []).forEach((nl) => { const b = data.leads.find((x) => x.id === nl.id); if (b && b.status !== nl.status) pushLeadRemote(nl); }); }
+        setData((d) => { const jobs = d.jobs.map((r) => (r.id === j.id ? j : r)); return { ...d, jobs, ...completeJobEffects({ ...d, jobs }, j) }; });
+        if (jobsRemote) fetch(`/api/jobs/${j.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(j) }).catch(() => {});
+      },
+      deleteJob: (id) => { del("jobs", id); if (jobsRemote) fetch(`/api/jobs/${id}`, { method: "DELETE" }).catch(() => {}); },
+
+      addMarketing: (m) => addTo("marketing", { ...m, id: uid() }),
+      updateMarketing: (m) => upd("marketing", m),
+      deleteMarketing: (id) => del("marketing", id),
+
+      addExpense: (e) => {
+        const row = { ...e, id: uid(), month: e.month || (e.date || "").slice(0, 7) } as Expense;
+        addTo("expenses", row);
+        if (expensesRemote) rPost("/api/expenses", row);
+      },
+      updateExpense: (e) => { upd("expenses", e); if (expensesRemote) rPatch(`/api/expenses/${e.id}`, e); },
+      deleteExpense: (id) => { del("expenses", id); if (expensesRemote) rDel(`/api/expenses/${id}`); },
+
+      addPayrollPayment: (p) => addTo("payrollPayments", { ...p, id: uid() }),
+      updatePayrollPayment: (p) => upd("payrollPayments", p),
+      deletePayrollPayment: (id) => del("payrollPayments", id),
+
+      setFinanceSettings: (fs) => { setData((d) => ({ ...d, financeSettings: fs })); if (financeRemote) rPut("/api/finance-settings", fs); },
+
+      optionsFor: (category) => data.dropdowns?.[category] ?? DEFAULT_DROPDOWNS[category] ?? [],
+      addDropdown: (category, value) => setData((d) => {
+        const cur = d.dropdowns[category] ?? DEFAULT_DROPDOWNS[category] ?? [];
+        const v = value.trim();
+        if (!v || cur.includes(v)) return d;
+        return { ...d, dropdowns: { ...d.dropdowns, [category]: [...cur, v] } };
+      }),
+      removeDropdown: (category, value) => setData((d) => {
+        const cur = d.dropdowns[category] ?? DEFAULT_DROPDOWNS[category] ?? [];
+        return { ...d, dropdowns: { ...d.dropdowns, [category]: cur.filter((x) => x !== value) } };
+      }),
+      moveDropdown: (category, value, dir) => setData((d) => {
+        const cur = [...(d.dropdowns[category] ?? DEFAULT_DROPDOWNS[category] ?? [])];
+        const i = cur.indexOf(value);
+        const j = dir === "up" ? i - 1 : i + 1;
+        if (i < 0 || j < 0 || j >= cur.length) return d;
+        [cur[i], cur[j]] = [cur[j], cur[i]];
+        return { ...d, dropdowns: { ...d.dropdowns, [category]: cur } };
+      }),
+
+      addMember: (m) => {
+        const member = { ...m, id: uid() } as CareMember;
+        // auto-create default perks for the member's offer/plan (member id is new → no existing dupes)
+        const newPerks = defaultPerksForMember(member).map((p) => ({ ...p, id: uid() }));
+        setData((d) => ({ ...d, careMembers: [member, ...d.careMembers], carePerks: [...newPerks, ...d.carePerks] }));
+        if (careRemote) { rPost("/api/care-members", member); newPerks.forEach((p) => rPost("/api/care-perks", p)); }
+      },
+      updateMember: (m) => { upd("careMembers", m); if (careRemote) rPatch(`/api/care-members/${m.id}`, m); },
+      deleteMember: (id) => { del("careMembers", id); if (careRemote) rDel(`/api/care-members/${id}`); },
+      addVisit: (v) => { const row = { ...v, id: uid() } as CareVisit; addTo("careVisits", row); if (careRemote) rPost("/api/care-visits", row); },
+      updateVisit: (v) => { upd("careVisits", v); if (careRemote) rPatch(`/api/care-visits/${v.id}`, v); },
+      deleteVisit: (id) => { del("careVisits", id); if (careRemote) rDel(`/api/care-visits/${id}`); },
+      addPerk: (p) => { const row = { ...p, id: uid() } as CarePerk; addTo("carePerks", row); if (careRemote) rPost("/api/care-perks", row); },
+      updatePerk: (p) => { upd("carePerks", p); if (careRemote) rPatch(`/api/care-perks/${p.id}`, p); },
+      deletePerk: (id) => { del("carePerks", id); if (careRemote) rDel(`/api/care-perks/${id}`); },
+
+      addOverhead: (o) => { const row = { ...o, id: uid() } as Overhead; addTo("overhead", row); if (overheadRemote) rPost("/api/overhead", row); },
+      updateOverhead: (o) => { upd("overhead", o); if (overheadRemote) rPatch(`/api/overhead/${o.id}`, o); },
+      deleteOverhead: (id) => { del("overhead", id); if (overheadRemote) rDel(`/api/overhead/${id}`); },
+
+      updateServiceItem: (i) => { upd("serviceCatalog", i); if (catalogRemote) rPatch(`/api/service-catalog/${i.id}`, i); },
+      setKpiTargets: (t) => { setData((d) => ({ ...d, kpiTargets: t })); if (kpiRemote) rPut("/api/kpi-targets", t); },
+
+      addCareLead: (c) => addTo("careClubLeads", { ...c, id: uid() }),
+      updateCareLead: (c) => upd("careClubLeads", c),
+      deleteCareLead: (id) => del("careClubLeads", id),
+
+      addBasePay: (r) => addTo("techBasePay", { ...r, id: uid() }),
+      updateBasePay: (r) => upd("techBasePay", r),
+      deleteBasePay: (id) => del("techBasePay", id),
+
+      addSetting: (kind, value) => setData((d) =>
+        d[kind].includes(value.trim()) || !value.trim() ? d : { ...d, [kind]: [...d[kind], value.trim()] }),
+      removeSetting: (kind, value) => setData((d) => ({ ...d, [kind]: d[kind].filter((v) => v !== value) })),
+
+      setPayRules: (rules) => setData((d) => ({
+        ...d,
+        payRules: rules,
+        // archive the previous version so pay history is preserved
+        payRulesHistory: [{ ...d.payRules }, ...d.payRulesHistory].slice(0, 50),
+      })),
+
+      exportJSON: () => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `5280-command-center-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      importJSON: (json) => {
+        try {
+          const p = JSON.parse(json) as AppData;
+          if (!Array.isArray(p.leads) || !Array.isArray(p.jobs)) return false;
+          const s = sampleData();
+          patch({
+            leads: p.leads, jobs: p.jobs, marketing: p.marketing ?? [],
+            expenses: p.expenses ?? [], financeSettings: p.financeSettings ?? s.financeSettings, payrollPayments: p.payrollPayments ?? [], dropdowns: p.dropdowns ?? {},
+            sources: p.sources ?? s.sources, services: p.services ?? s.services,
+            salesReps: p.salesReps ?? s.salesReps, technicians: p.technicians ?? s.technicians, units: p.units ?? s.units,
+            careMembers: p.careMembers ?? [], careVisits: p.careVisits ?? [], carePerks: p.carePerks ?? [],
+            careClubLeads: p.careClubLeads ?? [], techBasePay: p.techBasePay ?? s.techBasePay,
+            payRules: p.payRules ?? s.payRules, payRulesHistory: p.payRulesHistory ?? [],
+            serviceCatalog: p.serviceCatalog ?? s.serviceCatalog, overhead: p.overhead ?? s.overhead, kpiTargets: p.kpiTargets ?? s.kpiTargets,
+          });
+          return true;
+        } catch { return false; }
+      },
+      resetSample: () => setData(sampleData()),
+      clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], expenses: [], payrollPayments: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
+    };
+  }, [data, ready, from, to, currentRep, leadsRemote, jobsRemote, careRemote, expensesRemote, overheadRemote, catalogRemote, financeRemote, kpiRemote]);
+
+  return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
+}
+
+export function useStore(): Store {
+  const c = useContext(Ctx);
+  if (!c) throw new Error("useStore must be used inside <StoreProvider>");
+  return c;
+}
