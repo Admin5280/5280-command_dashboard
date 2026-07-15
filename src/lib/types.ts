@@ -206,6 +206,11 @@ export interface CareMember {
   lastDetailDate: string; nextDetailDate: string;
   visitsThisMonth: number; visitsThisYear: number; perksUsedThisYear: number;
   source: string; notes: string; createdAt: string; updatedAt: string;
+  // contract tracking (v2 — optional so existing records/literals stay valid)
+  ghlContractLink?: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
+  contractDurationMonths?: number;
 }
 
 export interface CareVisit {
@@ -369,6 +374,9 @@ export interface Expense {
   id: string; date: string; weekStart: string; weekEnd: string; category: string; reason: string; vendor: string;
   amount: number; paymentMethod: string; accountLast4: string; receiptLink: string; notes: string; enteredBy: string;
   createdAt: string; updatedAt: string;
+  // daily-expense additions (v2 — optional so existing records/literals stay valid)
+  month?: string;        // yyyy-mm for monthly rollups
+  bankBucket?: string;   // one of BANK_BUCKETS
 }
 
 export interface FinanceSettings {
@@ -377,9 +385,71 @@ export interface FinanceSettings {
   taxEstimatePct: number;  // fraction, e.g. 0.15
   monthlyOverhead: number;
   defaultLast4: string;
+  // v2 additions (optional)
+  profitMarginTarget?: number;   // fraction, default 0.40
+  defaultBankBuckets?: string[];
 }
 export const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
   stripeFeePct: 0.029, stripeFixedFee: 0.30, taxEstimatePct: 0.15, monthlyOverhead: 0, defaultLast4: "",
+  profitMarginTarget: 0.40, defaultBankBuckets: undefined,
+};
+
+/* ---------------- Bank buckets (v2) ---------------- */
+export const BANK_BUCKETS = [
+  "Main Revenue", "Payroll", "Gas", "Tools and Chemicals", "Overhead", "Marketing", "Taxes", "Profit", "Other",
+];
+
+/* ---------------- Overhead calendar (v2) ---------------- */
+export type PaymentFrequency = "Weekly" | "Biweekly" | "Monthly" | "Quarterly" | "Yearly" | "One-Time";
+export const PAYMENT_FREQUENCIES: PaymentFrequency[] = ["Weekly", "Biweekly", "Monthly", "Quarterly", "Yearly", "One-Time"];
+
+export interface Overhead {
+  id: string; name: string; category: string; vendor: string; amount: number;
+  paymentFrequency: PaymentFrequency; dueDate: string; nextChargeDate: string;
+  paymentMethod: string; bankBucket: string; autoAddToExpenses: boolean; activeStatus: boolean;
+  notes: string; createdAt: string; updatedAt: string;
+}
+
+/* ---------------- Service catalog (v2 — seeded from productsServices.csv) ---------------- */
+export interface ServiceCatalogItem {
+  id: string;                     // CSV service ID (stable internal key)
+  serviceName: string;
+  category: string;
+  price: string;                  // reference; may hold vehicle-size tiers
+  description: string;
+  isAddon: boolean;
+  active: boolean;                // deactivate-only; never delete used entries
+  activeForJobReporting: boolean; // Gift Cards / 5280 Care Club may be false
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/* ---------------- Deposit status (v2 — Sales close tracking) ---------------- */
+export type DepositStatus = "Not Required" | "Required" | "Collected" | "Partially Collected" | "Waived" | "Refunded";
+export const DEPOSIT_STATUSES: DepositStatus[] = ["Not Required", "Required", "Collected", "Partially Collected", "Waived", "Refunded"];
+
+/* ---------------- KPI targets (v2 — Overview goals, editable in Settings) ---------------- */
+export interface KpiTargets {
+  soloDailyRevenue: number; soloDailyJobsMin: number; soloDailyJobsMax: number; soloDaysPerWeek: number;
+  duoDailyRevenue: number; duoDailyJobsMin: number; duoDailyJobsMax: number; duoDaysPerWeek: number;
+  mobileWeeklyRevenue: number;
+  ceramicDailyRevenue: number; ceramicDailyJobsMin: number; ceramicDailyJobsMax: number;
+  shopDailyRevenue: number;
+  mobileTintDailyRevenue: number; mobileTintDaysPerWeek: number;
+  inShopTintDailyRevenue: number; inShopTintDailyJobs: number;
+  inShopDetailsDailyRevenue: number;
+  monthlyGoalNoTint: number; monthlyGoalWithTint: number; futureMonthlyGoal: number;
+}
+export const DEFAULT_KPI_TARGETS: KpiTargets = {
+  soloDailyRevenue: 800, soloDailyJobsMin: 2, soloDailyJobsMax: 3, soloDaysPerWeek: 7,
+  duoDailyRevenue: 1000, duoDailyJobsMin: 3, duoDailyJobsMax: 4, duoDaysPerWeek: 6,
+  mobileWeeklyRevenue: 11000,
+  ceramicDailyRevenue: 1000, ceramicDailyJobsMin: 1, ceramicDailyJobsMax: 2,
+  shopDailyRevenue: 1000,
+  mobileTintDailyRevenue: 600, mobileTintDaysPerWeek: 6,
+  inShopTintDailyRevenue: 1200, inShopTintDailyJobs: 2,
+  inShopDetailsDailyRevenue: 600,
+  monthlyGoalNoTint: 70000, monthlyGoalWithTint: 86000, futureMonthlyGoal: 150000,
 };
 
 export interface PayrollPayment {
@@ -408,6 +478,10 @@ export interface AppData {
   techBasePay: TechBasePayRule[];
   payRules: PayRules;
   payRulesHistory: PayRules[];
+  // v2 additions
+  serviceCatalog: ServiceCatalogItem[];
+  overhead: Overhead[];
+  kpiTargets: KpiTargets;
 }
 
 export const CARE_UNITS = [

@@ -160,6 +160,24 @@ function CloudPanel() {
     setMsg(r.ok ? `✓ Jobs: ${r.migrated} migrated, ${r.skipped} skipped, ${r.errors} errors (of ${r.found} found).` : `✕ ${r.error}`);
     setBusy(false);
   }
+  async function seedCatalog() {
+    setBusy(true); setMsg("Seeding service catalog from CSV…");
+    const r = await s.seedServiceCatalog();
+    setMsg(r.ok ? `✓ Service catalog: ${r.inserted} added, ${r.updated} refreshed (of ${r.total}).` : `✕ ${r.error}`);
+    setBusy(false);
+  }
+  async function migrateCare() {
+    setBusy(true); setMsg("Migrating Care Club to Supabase…");
+    const r = await s.migrateCareToCloud();
+    setMsg(r.ok ? `✓ Care Club: ${r.members} members, ${r.visits} visits, ${r.perks} perks migrated · ${r.skipped} skipped · ${r.errors} errors.` : `✕ ${r.error}`);
+    setBusy(false);
+  }
+  async function migrateFinance() {
+    setBusy(true); setMsg("Migrating Finance to Supabase…");
+    const r = await s.migrateFinanceToCloud();
+    setMsg(r.ok ? `✓ Finance: ${r.migrated} expense(s) migrated, ${r.skipped} skipped, ${r.errors} errors. Settings saved.` : `✕ ${r.error}`);
+    setBusy(false);
+  }
 
   const last = events[0];
   const lastCreated = events.find((e) => e.status === "created");
@@ -177,6 +195,9 @@ function CloudPanel() {
       <div className="text-xs text-muted mb-3 space-y-0.5">
         <div>Leads storage: <b className={s.leadsRemote ? "text-good" : "text-gold"}>{s.leadsRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b></div>
         <div>Jobs storage: <b className={s.jobsRemote ? "text-good" : "text-gold"}>{s.jobsRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b></div>
+        <div>Care Club storage: <b className={s.careRemote ? "text-good" : "text-gold"}>{s.careRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b></div>
+        <div>Finance / expenses storage: <b className={s.expensesRemote ? "text-good" : "text-gold"}>{s.expensesRemote ? "Cloud (Supabase)" : "Local (this browser)"}</b></div>
+        <div>Service catalog: <b className={s.catalogRemote && s.serviceCatalog.length ? "text-good" : "text-gold"}>{s.catalogRemote ? `Cloud · ${s.serviceCatalog.length} services` : "Local (this browser)"}</b></div>
         {(!s.leadsRemote || !s.jobsRemote) && <div>Add the Supabase env vars in Vercel + run the table SQL, then reload.</div>}
       </div>
 
@@ -198,6 +219,9 @@ function CloudPanel() {
         <Button onClick={refresh}>Refresh</Button>
         <Button variant="accent" onClick={() => { if (!busy) migrate(); }}>{busy ? "Working…" : "Migrate leads → Supabase"}</Button>
         <Button variant="accent" onClick={() => { if (!busy) migrateJobs(); }}>{busy ? "Working…" : "Migrate jobs → Supabase"}</Button>
+        <Button variant="accent" onClick={() => { if (!busy) seedCatalog(); }}>{busy ? "Working…" : "Seed service catalog (CSV)"}</Button>
+        <Button variant="accent" onClick={() => { if (!busy) migrateCare(); }}>{busy ? "Working…" : "Migrate Care Club → Supabase"}</Button>
+        <Button variant="accent" onClick={() => { if (!busy) migrateFinance(); }}>{busy ? "Working…" : "Migrate Finance → Supabase"}</Button>
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
     </Card>

@@ -1,4 +1,4 @@
-import { AppData, CARE_UNITS, DEFAULT_PAY_RULES, DEFAULT_FINANCE_SETTINGS } from "./types";
+import { AppData, CARE_UNITS, DEFAULT_PAY_RULES, DEFAULT_FINANCE_SETTINGS, DEFAULT_KPI_TARGETS } from "./types";
 
 export const DEFAULT_SOURCES = [
   "Google Ads", "Google LSA", "Google Business Profile", "Meta Ads", "Instagram",
@@ -46,6 +46,9 @@ export function sampleData(): AppData {
     ],
     payRules: { ...DEFAULT_PAY_RULES, tech: DEFAULT_PAY_RULES.tech.map((r) => ({ ...r })), sales: { ...DEFAULT_PAY_RULES.sales } },
     payRulesHistory: [],
+    serviceCatalog: [],
+    overhead: [],
+    kpiTargets: { ...DEFAULT_KPI_TARGETS },
   };
 }
 

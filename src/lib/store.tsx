@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, DEFAULT_DROPDOWNS, Expense, FinanceSettings, Job, Lead, MarketingSpend, PayRules, PayrollPayment, TechBasePayRule } from "./types";
+import { AppData, CareClubLead, CareMember, CarePerk, CareVisit, DEFAULT_DROPDOWNS, Expense, FinanceSettings, Job, KpiTargets, Lead, MarketingSpend, Overhead, PayRules, PayrollPayment, ServiceCatalogItem, TechBasePayRule } from "./types";
 import { sampleData } from "./sampleData";
 import { careLeadFromJob, defaultPerksForMember } from "./careClub";
 import { uid } from "./format";
@@ -48,6 +48,24 @@ interface Store extends AppData {
   deletePayrollPayment: (id: string) => void;
 
   setFinanceSettings: (s: FinanceSettings) => void;
+
+  // v2 cloud entities (Care Club + Finance moved to Supabase)
+  careRemote: boolean;
+  expensesRemote: boolean;
+  overheadRemote: boolean;
+  catalogRemote: boolean;
+  financeRemote: boolean;
+  kpiRemote: boolean;
+  migrateCareToCloud: () => Promise<{ ok: boolean; members?: number; visits?: number; perks?: number; skipped?: number; errors?: number; error?: string }>;
+  migrateFinanceToCloud: () => Promise<{ ok: boolean; migrated?: number; skipped?: number; errors?: number; error?: string }>;
+  seedServiceCatalog: () => Promise<{ ok: boolean; inserted?: number; updated?: number; total?: number; error?: string }>;
+
+  addOverhead: (o: Omit<Overhead, "id">) => void;
+  updateOverhead: (o: Overhead) => void;
+  deleteOverhead: (id: string) => void;
+
+  updateServiceItem: (i: ServiceCatalogItem) => void;
+  setKpiTargets: (t: KpiTargets) => void;
 
   // editable dropdown options (managed in Settings)
   optionsFor: (category: string) => string[];
@@ -140,6 +158,9 @@ function load(): AppData {
       techBasePay: parsed.techBasePay ?? s.techBasePay,
       payRules: parsed.payRules ?? s.payRules,
       payRulesHistory: parsed.payRulesHistory ?? s.payRulesHistory,
+      serviceCatalog: parsed.serviceCatalog ?? s.serviceCatalog,
+      overhead: parsed.overhead ?? s.overhead,
+      kpiTargets: parsed.kpiTargets ?? s.kpiTargets,
     };
   } catch {
     return sampleData();
@@ -154,6 +175,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [currentRep, setCurrentRepState] = useState("");
   const [leadsRemote, setLeadsRemote] = useState(false);
   const [jobsRemote, setJobsRemote] = useState(false);
+  const [careRemote, setCareRemote] = useState(false);
+  const [expensesRemote, setExpensesRemote] = useState(false);
+  const [overheadRemote, setOverheadRemote] = useState(false);
+  const [catalogRemote, setCatalogRemote] = useState(false);
+  const [financeRemote, setFinanceRemote] = useState(false);
+  const [kpiRemote, setKpiRemote] = useState(false);
 
   // hydrate from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
@@ -188,6 +215,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [ready]);
 
+  // v2: Care Club + Finance + Service Catalog + KPI Targets from Supabase when configured.
+  // Each slice is independent; a failed/absent endpoint just keeps that slice on localStorage.
+  // GUARD: never replace a non-empty LOCAL list with an EMPTY cloud list — the new tables
+  // start empty, so before migration cloud returns []; adopting it would wipe local data.
+  // We only switch a slice to "remote" once cloud is authoritative (has rows) or local is empty.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const local = {
+      care: data.careMembers.length, visits: data.careVisits.length, perks: data.carePerks.length,
+      exp: data.expenses.length, over: data.overhead.length, cat: data.serviceCatalog.length,
+    };
+    const grab = (url: string, fn: (j: unknown) => void) =>
+      fetch(url).then((r) => r.json()).then((j) => { if (!cancelled) fn(j); }).catch(() => {});
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    grab("/api/care-members", (j: any) => { if (j?.configured && Array.isArray(j.members) && (j.members.length > 0 || local.care === 0)) { setData((d) => ({ ...d, careMembers: j.members })); setCareRemote(true); } });
+    grab("/api/care-visits", (j: any) => { if (j?.configured && Array.isArray(j.visits) && (j.visits.length > 0 || local.visits === 0)) setData((d) => ({ ...d, careVisits: j.visits })); });
+    grab("/api/care-perks", (j: any) => { if (j?.configured && Array.isArray(j.perks) && (j.perks.length > 0 || local.perks === 0)) setData((d) => ({ ...d, carePerks: j.perks })); });
+    grab("/api/expenses", (j: any) => { if (j?.configured && Array.isArray(j.expenses) && (j.expenses.length > 0 || local.exp === 0)) { setData((d) => ({ ...d, expenses: j.expenses })); setExpensesRemote(true); } });
+    grab("/api/overhead", (j: any) => { if (j?.configured && Array.isArray(j.overhead) && (j.overhead.length > 0 || local.over === 0)) { setData((d) => ({ ...d, overhead: j.overhead })); setOverheadRemote(true); } });
+    grab("/api/service-catalog", (j: any) => { if (j?.configured && Array.isArray(j.catalog) && (j.catalog.length > 0 || local.cat === 0)) { setData((d) => ({ ...d, serviceCatalog: j.catalog })); setCatalogRemote(true); } });
+    // single-row config: enable write-through, but never auto-overwrite local settings/targets (owner may have local edits not yet migrated)
+    grab("/api/finance-settings", (j: any) => { if (j?.configured) setFinanceRemote(true); });
+    grab("/api/kpi-targets", (j: any) => { if (j?.configured) setKpiRemote(true); });
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   // persist on change (only once ready so we don't clobber storage with defaults)
   useEffect(() => {
     if (ready) localStorage.setItem(KEY, JSON.stringify(data));
@@ -197,7 +253,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const patch = (p: Partial<AppData>) => setData((d) => ({ ...d, ...p }));
     const inRange = (iso: string) => (!from || iso >= from) && (!to || iso <= to);
 
-    type Coll = "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks" | "careClubLeads" | "techBasePay" | "expenses" | "payrollPayments";
+    type Coll = "leads" | "jobs" | "marketing" | "careMembers" | "careVisits" | "carePerks" | "careClubLeads" | "techBasePay" | "expenses" | "payrollPayments" | "overhead" | "serviceCatalog";
     const addTo = <K extends Coll>(k: K, row: AppData[K][number]) =>
       setData((d) => ({ ...d, [k]: [row, ...d[k]] }));
     const upd = <K extends Coll>(k: K, row: { id: string }) =>
@@ -205,8 +261,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const del = <K extends Coll>(k: K, id: string) =>
       setData((d) => ({ ...d, [k]: (d[k] as { id: string }[]).filter((r) => r.id !== id) as AppData[K] }));
 
+    const JSONH = { "content-type": "application/json" };
     const pushLeadRemote = (l: Lead) =>
-      fetch(`/api/leads/${l.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(l) }).catch(() => {});
+      fetch(`/api/leads/${l.id}`, { method: "PATCH", headers: JSONH, body: JSON.stringify(l) }).catch(() => {});
+    // generic write-through helpers for v2 cloud entities (fire-and-forget; local state is optimistic)
+    const rPost = (url: string, body: unknown) => fetch(url, { method: "POST", headers: JSONH, body: JSON.stringify(body) }).catch(() => {});
+    const rPatch = (url: string, body: unknown) => fetch(url, { method: "PATCH", headers: JSONH, body: JSON.stringify(body) }).catch(() => {});
+    const rPut = (url: string, body: unknown) => fetch(url, { method: "PUT", headers: JSONH, body: JSON.stringify(body) }).catch(() => {});
+    const rDel = (url: string) => fetch(url, { method: "DELETE" }).catch(() => {});
 
     return {
       ...data,
@@ -239,6 +301,46 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         } catch (e) { return { ok: false, error: String(e) }; }
       },
 
+      careRemote, expensesRemote, overheadRemote, catalogRemote, financeRemote, kpiRemote,
+      migrateCareToCloud: async () => {
+        try {
+          const res = await fetch("/api/care/migrate", { method: "POST", headers: JSONH, body: JSON.stringify({ members: data.careMembers, visits: data.careVisits, perks: data.carePerks }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const [m, v, p] = await Promise.all([
+            fetch("/api/care-members").then((r) => r.json()), fetch("/api/care-visits").then((r) => r.json()), fetch("/api/care-perks").then((r) => r.json()),
+          ]);
+          setData((d) => ({
+            ...d, careMembers: Array.isArray(m.members) ? m.members : d.careMembers,
+            careVisits: Array.isArray(v.visits) ? v.visits : d.careVisits, carePerks: Array.isArray(p.perks) ? p.perks : d.carePerks,
+          }));
+          setCareRemote(true);
+          return { ok: true, members: j.members, visits: j.visits, perks: j.perks, skipped: j.skipped, errors: j.errors };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+      migrateFinanceToCloud: async () => {
+        try {
+          await fetch("/api/finance-settings", { method: "PUT", headers: JSONH, body: JSON.stringify(data.financeSettings) });
+          const res = await fetch("/api/expenses/migrate", { method: "POST", headers: JSONH, body: JSON.stringify({ expenses: data.expenses }) });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Migration failed" };
+          const ex = await fetch("/api/expenses").then((r) => r.json());
+          if (Array.isArray(ex.expenses)) setData((d) => ({ ...d, expenses: ex.expenses }));
+          setExpensesRemote(true); setFinanceRemote(true);
+          return { ok: true, migrated: j.migrated, skipped: j.skipped, errors: j.errors };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+      seedServiceCatalog: async () => {
+        try {
+          const res = await fetch("/api/service-catalog/seed", { method: "POST" });
+          const j = await res.json();
+          if (!res.ok) return { ok: false, error: j.error || "Seed failed" };
+          const cat = await fetch("/api/service-catalog").then((r) => r.json());
+          if (Array.isArray(cat.catalog)) { setData((d) => ({ ...d, serviceCatalog: cat.catalog })); setCatalogRemote(true); }
+          return { ok: true, inserted: j.inserted, updated: j.updated, total: j.total };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      },
+
       addLead: (l) => {
         if (leadsRemote) {
           const temp = { ...l, id: uid() } as Lead;
@@ -268,15 +370,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateMarketing: (m) => upd("marketing", m),
       deleteMarketing: (id) => del("marketing", id),
 
-      addExpense: (e) => addTo("expenses", { ...e, id: uid() }),
-      updateExpense: (e) => upd("expenses", e),
-      deleteExpense: (id) => del("expenses", id),
+      addExpense: (e) => {
+        const row = { ...e, id: uid(), month: e.month || (e.date || "").slice(0, 7) } as Expense;
+        addTo("expenses", row);
+        if (expensesRemote) rPost("/api/expenses", row);
+      },
+      updateExpense: (e) => { upd("expenses", e); if (expensesRemote) rPatch(`/api/expenses/${e.id}`, e); },
+      deleteExpense: (id) => { del("expenses", id); if (expensesRemote) rDel(`/api/expenses/${id}`); },
 
       addPayrollPayment: (p) => addTo("payrollPayments", { ...p, id: uid() }),
       updatePayrollPayment: (p) => upd("payrollPayments", p),
       deletePayrollPayment: (id) => del("payrollPayments", id),
 
-      setFinanceSettings: (fs) => setData((d) => ({ ...d, financeSettings: fs })),
+      setFinanceSettings: (fs) => { setData((d) => ({ ...d, financeSettings: fs })); if (financeRemote) rPut("/api/finance-settings", fs); },
 
       optionsFor: (category) => data.dropdowns?.[category] ?? DEFAULT_DROPDOWNS[category] ?? [],
       addDropdown: (category, value) => setData((d) => {
@@ -298,21 +404,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return { ...d, dropdowns: { ...d.dropdowns, [category]: cur } };
       }),
 
-      addMember: (m) => setData((d) => {
-        const member = { ...m, id: uid() };
-        // auto-create default perks for the member's offer/plan (no duplicates)
-        const have = new Set(d.carePerks.filter((p) => p.memberId === member.id).map((p) => p.perkName));
-        const newPerks = defaultPerksForMember(member).filter((p) => !have.has(p.perkName)).map((p) => ({ ...p, id: uid() }));
-        return { ...d, careMembers: [member, ...d.careMembers], carePerks: [...newPerks, ...d.carePerks] };
-      }),
-      updateMember: (m) => upd("careMembers", m),
-      deleteMember: (id) => del("careMembers", id),
-      addVisit: (v) => addTo("careVisits", { ...v, id: uid() }),
-      updateVisit: (v) => upd("careVisits", v),
-      deleteVisit: (id) => del("careVisits", id),
-      addPerk: (p) => addTo("carePerks", { ...p, id: uid() }),
-      updatePerk: (p) => upd("carePerks", p),
-      deletePerk: (id) => del("carePerks", id),
+      addMember: (m) => {
+        const member = { ...m, id: uid() } as CareMember;
+        // auto-create default perks for the member's offer/plan (member id is new → no existing dupes)
+        const newPerks = defaultPerksForMember(member).map((p) => ({ ...p, id: uid() }));
+        setData((d) => ({ ...d, careMembers: [member, ...d.careMembers], carePerks: [...newPerks, ...d.carePerks] }));
+        if (careRemote) { rPost("/api/care-members", member); newPerks.forEach((p) => rPost("/api/care-perks", p)); }
+      },
+      updateMember: (m) => { upd("careMembers", m); if (careRemote) rPatch(`/api/care-members/${m.id}`, m); },
+      deleteMember: (id) => { del("careMembers", id); if (careRemote) rDel(`/api/care-members/${id}`); },
+      addVisit: (v) => { const row = { ...v, id: uid() } as CareVisit; addTo("careVisits", row); if (careRemote) rPost("/api/care-visits", row); },
+      updateVisit: (v) => { upd("careVisits", v); if (careRemote) rPatch(`/api/care-visits/${v.id}`, v); },
+      deleteVisit: (id) => { del("careVisits", id); if (careRemote) rDel(`/api/care-visits/${id}`); },
+      addPerk: (p) => { const row = { ...p, id: uid() } as CarePerk; addTo("carePerks", row); if (careRemote) rPost("/api/care-perks", row); },
+      updatePerk: (p) => { upd("carePerks", p); if (careRemote) rPatch(`/api/care-perks/${p.id}`, p); },
+      deletePerk: (id) => { del("carePerks", id); if (careRemote) rDel(`/api/care-perks/${id}`); },
+
+      addOverhead: (o) => { const row = { ...o, id: uid() } as Overhead; addTo("overhead", row); if (overheadRemote) rPost("/api/overhead", row); },
+      updateOverhead: (o) => { upd("overhead", o); if (overheadRemote) rPatch(`/api/overhead/${o.id}`, o); },
+      deleteOverhead: (id) => { del("overhead", id); if (overheadRemote) rDel(`/api/overhead/${id}`); },
+
+      updateServiceItem: (i) => { upd("serviceCatalog", i); if (catalogRemote) rPatch(`/api/service-catalog/${i.id}`, i); },
+      setKpiTargets: (t) => { setData((d) => ({ ...d, kpiTargets: t })); if (kpiRemote) rPut("/api/kpi-targets", t); },
 
       addCareLead: (c) => addTo("careClubLeads", { ...c, id: uid() }),
       updateCareLead: (c) => upd("careClubLeads", c),
@@ -355,6 +468,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             careMembers: p.careMembers ?? [], careVisits: p.careVisits ?? [], carePerks: p.carePerks ?? [],
             careClubLeads: p.careClubLeads ?? [], techBasePay: p.techBasePay ?? s.techBasePay,
             payRules: p.payRules ?? s.payRules, payRulesHistory: p.payRulesHistory ?? [],
+            serviceCatalog: p.serviceCatalog ?? s.serviceCatalog, overhead: p.overhead ?? s.overhead, kpiTargets: p.kpiTargets ?? s.kpiTargets,
           });
           return true;
         } catch { return false; }
@@ -362,7 +476,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       resetSample: () => setData(sampleData()),
       clearAll: () => setData({ ...sampleData(), leads: [], jobs: [], marketing: [], expenses: [], payrollPayments: [], careMembers: [], careVisits: [], carePerks: [], careClubLeads: [] }),
     };
-  }, [data, ready, from, to, currentRep, leadsRemote, jobsRemote]);
+  }, [data, ready, from, to, currentRep, leadsRemote, jobsRemote, careRemote, expensesRemote, overheadRemote, catalogRemote, financeRemote, kpiRemote]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }
